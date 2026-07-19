@@ -40,7 +40,7 @@
     },
     {
       "rule": "private-package-reference",
-      "pattern": "(?:ghcr\\.io/(?!dragoshont/k-core(?:[:@/]|$))|npm\\.pkg\\.github\\.com/)"
+      "pattern": "(?:ghcr\\.io/(?!dragoshont/k-core(?=[^A-Za-z0-9._-]|$))|npm\\.pkg\\.github\\.com/)"
     },
     {
       "rule": "private-key-material",

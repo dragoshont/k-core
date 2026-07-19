@@ -6,7 +6,7 @@ on:
       - "v*.*.*"
 
 permissions:
-  contents: read
+  contents: write
   packages: write
   id-token: write
   attestations: write
@@ -37,7 +37,7 @@ jobs:
           docker pull "$image"
           docker tag "$image" postgres:16-alpine
 
-      - name: Validate immutable SemVer tag
+      - name: Validate protected SemVer release tag
         id: release
         shell: bash
         run: |
@@ -73,7 +73,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish immutable linux/amd64 image
+      - name: Build and publish digest-addressed linux/amd64 image
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -89,7 +89,6 @@ jobs:
             OCI_LICENSES=Apache-2.0
           tags: |
             ${{ env.IMAGE }}:sha-${{ github.sha }}
-            ${{ env.IMAGE }}:${{ steps.release.outputs.version }}
 
       - name: Attest published image
         uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
@@ -97,3 +96,30 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+
+      - name: Publish digest-bound GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Published image digest is invalid" >&2
+            exit 1
+          fi
+          notes="$(mktemp)"
+          trap 'rm -f "$notes"' EXIT
+          cat >"$notes" <<EOF
+          Release image: \`${IMAGE}@${IMAGE_DIGEST}\`
+
+          The OCI digest above is the immutable deployment identity. The
+          \`sha-${GITHUB_SHA}\` tag is a commit locator; do not deploy by a mutable
+          registry alias. The image includes an SPDX SBOM, SLSA v1 provenance, and a
+          GitHub build-provenance attestation.
+          EOF
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --title "k-core ${GITHUB_REF_NAME}" --notes-file "$notes"
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "k-core ${GITHUB_REF_NAME}" --notes-file "$notes"
+          fi

@@ -90,6 +90,25 @@ The image gate builds and inspects a local `linux/amd64` image, checks every fin
 layer and the final plugin filesystem, then runs neutral and custom-profile smoke
 tests. It does not log in to a registry or push an image.
 
+## Release images
+
+GitHub releases publish `linux/amd64` images to `ghcr.io/dragoshont/k-core`. Deploy
+only by the immutable OCI digest shown in the GitHub Release, for example:
+
+```text
+ghcr.io/dragoshont/k-core@sha256:<64-hex-digest>
+```
+
+All registry tags, including `sha-<commit>` and any SemVer alias, are mutable locators.
+They are not deployment or verification identities. Resolve and pin the OCI digest,
+then verify its release attestation against the repository before deployment:
+
+```sh
+gh attestation verify \
+	oci://ghcr.io/dragoshont/k-core@sha256:<64-hex-digest> \
+	--repo dragoshont/k-core
+```
+
 ## Architecture and contracts
 
 - [Architecture](docs/architecture.md)
