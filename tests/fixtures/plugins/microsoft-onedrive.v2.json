@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 2,
+  "protocolVersion": 2,
+  "pluginId": "microsoft-onedrive",
+  "displayName": "Microsoft and OneDrive",
+  "version": "1.0.0",
+  "entrypoint": "index.mjs",
+  "runtime": {
+    "allowedHosts": ["graph.microsoft.com"],
+    "timeoutMs": 30000,
+    "maxRequestBytes": 1048576,
+    "maxResponseBytes": 1048576,
+    "maxArtifactBytes": 26214400
+  },
+  "capabilities": [
+    {
+      "capabilityId": "microsoft-onedrive/identity",
+      "family": "identity-provider",
+      "version": 1,
+      "commands": ["identity.resolve"],
+      "authorization": {
+        "kind": "profile-oauth2",
+        "registrationId": "microsoft-onedrive",
+        "requiredScopes": ["openid", "profile", "email", "offline_access"]
+      }
+    },
+    {
+      "capabilityId": "microsoft-onedrive/destination",
+      "family": "delivery-destination",
+      "version": 1,
+      "commands": ["destination.preflight", "destination.deliver", "destination.reconcile"],
+      "authorization": {
+        "kind": "profile-oauth2",
+        "registrationId": "microsoft-onedrive",
+        "requiredScopes": ["Files.ReadWrite"]
+      },
+      "artifactMediaTypes": ["application/epub+zip"]
+    }
+  ],
+  "review": {
+    "policyRef": "docs/providers/policy.md",
+    "reviewedAt": "2026-07-18"
+  }
+}

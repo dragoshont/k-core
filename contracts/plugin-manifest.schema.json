@@ -1,0 +1,303 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://k.example.invalid/contracts/plugin-manifest.schema.json",
+  "title": "k installed plugin manifest",
+  "description": "Strict manifest contract for unchanged source-v1 plugins and capability-typed v2 plugins.",
+  "oneOf": [
+    { "$ref": "#/$defs/sourceManifestV1" },
+    { "$ref": "#/$defs/capabilityManifestV2" }
+  ],
+  "$defs": {
+    "pluginId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+      "not": { "enum": ["annas-archive", "vk", "vk-com"] }
+    },
+    "semver": {
+      "type": "string",
+      "maxLength": 40,
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9.-]+)?$"
+    },
+    "entrypoint": {
+      "type": "string",
+      "maxLength": 124,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\\.mjs$"
+    },
+    "host": {
+      "type": "string",
+      "maxLength": 253,
+      "pattern": "^(?:\\*\\.)?[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$",
+      "not": { "pattern": "annas-archive|(^|\\.)vk\\.com$" }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowedHosts", "timeoutMs", "maxRequestBytes", "maxResponseBytes", "maxArtifactBytes"],
+      "properties": {
+        "allowedHosts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/host" }
+        },
+        "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 30000 },
+        "maxRequestBytes": { "type": "integer", "minimum": 1024, "maximum": 1048576 },
+        "maxResponseBytes": { "type": "integer", "minimum": 1024, "maximum": 1048576 },
+        "maxArtifactBytes": { "type": "integer", "minimum": 0, "maximum": 26214400 }
+      }
+    },
+    "authorization": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "none" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "registrationId"],
+          "properties": {
+            "kind": { "const": "application" },
+            "registrationId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "registrationId", "requiredScopes"],
+          "properties": {
+            "kind": { "const": "profile-oauth2" },
+            "registrationId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+            "requiredScopes": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+            }
+          }
+        }
+      ]
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyRef", "reviewedAt"],
+      "properties": {
+        "policyRef": { "const": "docs/providers/policy.md" },
+        "reviewedAt": { "type": "string", "format": "date" }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capabilityId", "family", "version", "commands", "authorization"],
+      "properties": {
+        "capabilityId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,63}$"
+        },
+        "family": {
+          "type": "string",
+          "enum": ["catalog-source", "metadata-enricher", "identity-provider", "mail-sender", "delivery-destination"]
+        },
+        "version": { "const": 1 },
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "catalog.search", "catalog.detail", "catalog.acquire",
+              "metadata.enrich", "identity.resolve", "mail.preflight", "mail.send",
+              "destination.preflight", "destination.deliver", "destination.reconcile"
+            ]
+          }
+        },
+        "authorization": { "$ref": "#/$defs/authorization" },
+        "mediaKinds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["book", "movie"] }
+        },
+        "artifactMediaTypes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z0-9.+-]+/[a-z0-9.+-]+$" }
+        },
+        "rightsBases": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["public-domain", "user-owned", "licensed-private"] }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "family": { "const": "catalog-source" } }, "required": ["family"] },
+          "then": {
+            "required": ["mediaKinds"],
+            "properties": {
+              "mediaKinds": true,
+              "rightsBases": true,
+              "commands": {
+                "type": "array",
+                "contains": { "const": "catalog.search" },
+                "items": { "enum": ["catalog.search", "catalog.detail", "catalog.acquire"] }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "type": "object",
+                  "properties": {
+                    "commands": {
+                      "type": "array",
+                      "contains": { "const": "catalog.acquire" }
+                    }
+                  },
+                  "required": ["commands"]
+                },
+                "then": {
+                  "type": "object",
+                  "properties": { "rightsBases": true },
+                  "required": ["rightsBases"]
+                },
+                "else": {
+                  "type": "object",
+                  "properties": { "rightsBases": false }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": { "properties": { "family": { "const": "metadata-enricher" } }, "required": ["family"] },
+          "then": {
+            "required": ["mediaKinds"],
+            "properties": {
+              "mediaKinds": true,
+              "commands": { "type": "array", "prefixItems": [{ "const": "metadata.enrich" }], "minItems": 1, "maxItems": 1 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "family": { "const": "identity-provider" } }, "required": ["family"] },
+          "then": {
+            "properties": {
+              "commands": { "type": "array", "prefixItems": [{ "const": "identity.resolve" }], "minItems": 1, "maxItems": 1 },
+              "authorization": {
+                "type": "object",
+                "properties": { "kind": { "const": "profile-oauth2" } },
+                "required": ["kind"]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "family": { "const": "mail-sender" } }, "required": ["family"] },
+          "then": {
+            "required": ["artifactMediaTypes"],
+            "properties": {
+              "artifactMediaTypes": true,
+              "commands": {
+                "type": "array",
+                "contains": { "const": "mail.send" },
+                "items": { "enum": ["mail.preflight", "mail.send"] }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "family": { "const": "delivery-destination" } }, "required": ["family"] },
+          "then": {
+            "required": ["artifactMediaTypes"],
+            "properties": {
+              "artifactMediaTypes": true,
+              "commands": {
+                "type": "array",
+                "contains": { "const": "destination.deliver" },
+                "items": { "enum": ["destination.preflight", "destination.deliver", "destination.reconcile"] }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "sourceManifestV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "protocolVersion", "pluginId", "displayName", "version",
+        "entrypoint", "capabilities", "allowedHosts", "rightsBasis",
+        "rightsJurisdiction", "rightsReviewedAt", "formats", "timeoutMs",
+        "maxResponseBytes", "maxArtifactBytes"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "protocolVersion": { "const": 1 },
+        "pluginId": { "$ref": "#/$defs/pluginId" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "version": { "$ref": "#/$defs/semver" },
+        "entrypoint": { "$ref": "#/$defs/entrypoint" },
+        "capabilities": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "enum": ["search", "detail", "acquire"] },
+          "allOf": [
+            { "contains": { "const": "search" } },
+            { "contains": { "const": "detail" } },
+            { "contains": { "const": "acquire" } }
+          ]
+        },
+        "allowedHosts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/host" }
+        },
+        "rightsBasis": { "const": "public-domain" },
+        "rightsJurisdiction": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "rightsReviewedAt": { "type": "string", "format": "date" },
+        "formats": { "type": "array", "prefixItems": [{ "const": "epub" }], "minItems": 1, "maxItems": 1 },
+        "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 30000 },
+        "maxResponseBytes": { "type": "integer", "minimum": 1024, "maximum": 1048576 },
+        "maxArtifactBytes": { "type": "integer", "minimum": 1, "maximum": 26214400 }
+      }
+    },
+    "capabilityManifestV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "protocolVersion", "pluginId", "displayName", "version", "entrypoint", "runtime", "capabilities", "review"],
+      "properties": {
+        "schemaVersion": { "const": 2 },
+        "protocolVersion": { "const": 2 },
+        "pluginId": { "$ref": "#/$defs/pluginId" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "version": { "$ref": "#/$defs/semver" },
+        "entrypoint": { "$ref": "#/$defs/entrypoint" },
+        "runtime": { "$ref": "#/$defs/runtime" },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/capability" }
+        },
+        "review": { "$ref": "#/$defs/review" }
+      }
+    }
+  }
+}

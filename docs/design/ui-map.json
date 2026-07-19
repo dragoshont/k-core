@@ -1,0 +1,114 @@
+{
+  "schema": "architrave.designMap.v1",
+  "description": "k component glossary for the household book delivery flow.",
+  "sourceOfTruth": {
+    "storybook": ".storybook",
+    "spec": "docs/ui/design-spec.md",
+    "contract": "contracts/http.capabilities.phase-3.openapi.yaml"
+  },
+  "routeCompositions": [
+    "Pages/Unlock",
+    "Pages/Setup",
+    "Pages/Search",
+    "Pages/BookDetail",
+    "Pages/DeliveryPreflight",
+    "Pages/RecentAuthentication",
+    "Pages/ActivityEmpty",
+    "Pages/ActivityList",
+    "Pages/OperationDetail",
+    "Pages/Profile",
+    "Pages/SearchEReader",
+    "Pages/OperationDetailEReader"
+  ],
+  "routeVariants": {
+    "default": "mobile-enhanced",
+    "eReader": {
+      "requiredCompositions": ["Pages/SearchEReader", "Pages/OperationDetailEReader"],
+      "rules": [
+        "Use the same semantic content components and contract fixtures as the default route",
+        "Render primary navigation as an in-flow top list",
+        "Require no animation, sticky positioning, polling, or JavaScript-only action",
+        "Keep manual Refresh and ordinary form submission visible"
+      ]
+    }
+  },
+  "components": [
+    {
+      "name": "ApplicationShell",
+      "kind": "shell",
+      "storybookStories": ["Shell/Authenticated", "Shell/EReader"],
+      "codePaths": ["src/ui/ApplicationShell.tsx"],
+      "tokens": ["comp.shell", "comp.navigation", "sys.color", "sys.space", "sys.type", "sys.focus", "sys.stroke", "sys.motion"],
+      "states": ["authenticated", "e-reader"],
+      "capabilityClaims": ["Navigation exposes only Search, Activity, and Profile"]
+    },
+    {
+      "name": "ProfilePicker",
+      "kind": "authentication",
+      "storybookStories": ["Authentication/ProfilePicker", "Authentication/ProfileSelected", "Authentication/SetupRequired", "Authentication/RecoveryRequired"],
+      "codePaths": ["src/ui/auth/ProfilePicker.tsx"],
+      "tokens": ["comp.profilePicker", "comp.button", "sys.color.action", "sys.type.control", "sys.focus", "sys.motion"],
+      "states": ["ready", "selected", "setup-required", "recovery-required"],
+      "capabilityClaims": ["Shows exactly the fixed profiles returned by the auth contract"]
+    },
+    {
+      "name": "PinUnlockForm",
+      "kind": "authentication",
+      "storybookStories": ["Authentication/PinReady", "Authentication/PinSubmitting", "Authentication/PinError", "Authentication/PinDelayed", "Authentication/RecentAuthentication"],
+      "codePaths": ["src/ui/auth/PinUnlockForm.tsx"],
+      "tokens": ["comp.input", "comp.button", "comp.notice", "sys.color.status", "sys.type", "sys.focus", "sys.stroke", "sys.motion"],
+      "states": ["ready", "submitting", "invalid", "delayed", "recent-authentication"],
+      "capabilityClaims": ["Accepts one four-digit PIN field and never exposes credential details"]
+    },
+    {
+      "name": "PinSetupForm",
+      "kind": "authentication",
+      "storybookStories": ["Authentication/SetupReady", "Authentication/SetupSubmitting", "Authentication/SetupError", "Authentication/SetupConflict", "Authentication/SetupPinRejected", "Authentication/SetupThrottled", "Authentication/SetupCompleted"],
+      "codePaths": ["src/ui/auth/PinSetupForm.tsx"],
+      "tokens": ["comp.input", "comp.button", "comp.notice", "sys.color.status", "sys.type", "sys.focus", "sys.stroke", "sys.motion"],
+      "states": ["ready", "submitting", "invalid", "conflict", "pin-rejected", "throttled", "completed"],
+      "capabilityClaims": ["Redeems only an operator-issued one-time credential code and never offers first-visitor setup"]
+    },
+    {
+      "name": "BookSearch",
+      "kind": "catalog",
+      "storybookStories": ["Catalog/Idle", "Catalog/Loading", "Catalog/Results", "Catalog/Partial", "Catalog/NoResults", "Catalog/Failure", "Catalog/ItemDetail", "Catalog/ItemDetailWithMetadata", "Catalog/ItemNotFound"],
+      "codePaths": ["src/ui/BookSearch.tsx"],
+      "tokens": ["comp.search", "comp.result", "comp.capabilityBadge", "comp.cover", "sys.color.status", "sys.type", "sys.focus", "sys.stroke", "sys.motion"],
+      "states": ["idle", "loading", "results", "partial", "no-results", "failed", "item-detail", "metadata-evidence", "provider-coverage", "item-not-found"],
+      "capabilityClaims": ["Candidate and deliverable states come only from operator-installed source plugins in the backend contract", "Metadata and ratings retain provider evidence and never grant acquisition rights", "Goodreads is unsupported, Amazon availability is eligibility gated, and Kindle Unlimited is not exposed"]
+    },
+    {
+      "name": "DeliveryPreflight",
+      "kind": "operation-preflight",
+      "storybookStories": ["Delivery/Checking", "Delivery/Ready", "Delivery/Warning", "Delivery/Blocked", "Delivery/Expired", "Delivery/ConfigurationRequired", "Delivery/DestinationRevisionChanged", "Delivery/RecentAuthenticationRequired", "Delivery/StaleAtSubmit"],
+      "codePaths": ["src/ui/DeliveryPreflight.tsx"],
+      "tokens": ["comp.notice", "comp.button", "comp.cover", "sys.color.status", "sys.type", "sys.focus", "sys.stroke", "sys.motion"],
+      "states": ["checking", "ready", "warning", "blocked", "expired", "configuration-required", "destination-revision-changed", "recent-authentication-required", "stale-at-submit"],
+      "capabilityClaims": ["Submission requires an unexpired preflight and the existing configured Kindle destination", "SMTP acceptance means submitted and never implies Kindle receipt"]
+    },
+    {
+      "name": "OperationTimeline",
+      "kind": "operation-status",
+      "storybookStories": ["Operations/ActivityEmpty", "Operations/ActivityList", "Operations/Queued", "Operations/Waiting", "Operations/Running", "Operations/Blocked", "Operations/Canceling", "Operations/Canceled", "Operations/Submitted", "Operations/Received", "Operations/Failed", "Operations/Partial", "Operations/Expired", "Operations/Unknown"],
+      "codePaths": ["src/ui/OperationTimeline.tsx"],
+      "tokens": ["comp.timeline", "comp.button", "sys.color.status", "sys.type", "sys.focus", "sys.stroke", "sys.motion"],
+      "states": ["queued", "waiting", "running", "blocked", "canceling", "canceled", "succeeded", "failed", "partial", "expired", "unknown"],
+      "stateAxes": {
+        "operationStatus": ["queued", "waiting", "running", "blocked", "canceling", "canceled", "succeeded", "failed", "partial", "expired", "unknown"],
+        "stageStatus": ["not-started", "queued", "waiting", "running", "blocked", "canceled", "succeeded", "failed", "unknown"],
+        "destinationEvidence": ["not-submitted", "provider-accepted", "bounced", "rejected", "unknown", "user-confirmed-received"]
+      },
+      "capabilityClaims": ["Submitted means SMTP acceptance; Received requires user confirmation", "Unknown external effects remain blocked and are not automatically repeated"]
+    },
+    {
+      "name": "ProfileSettings",
+      "kind": "settings",
+      "storybookStories": ["Profile/NoKindle", "Profile/Ready", "Profile/SenderConfigurationRequired", "Profile/SenderRevoked", "Profile/SenderRejected", "Profile/SenderUnknown", "Profile/AccountsConnected", "Profile/AccountNotConfigured", "Profile/AccountConnecting", "Profile/AccountExpiredOrRevoked", "Profile/AccountError", "Profile/AccountConfigurationRequired", "Profile/AccountConnectionCompleted", "Profile/AccountConnectionDenied", "Profile/AccountConnectionExpired", "Profile/AccountConnectionInvalid", "Profile/RecentAuthenticationRequired", "Profile/PinChanged", "Profile/PinError"],
+      "codePaths": ["src/ui/ProfileSettings.tsx"],
+      "tokens": ["comp.input", "comp.notice", "comp.button", "sys.color.status", "sys.type", "sys.focus", "sys.stroke", "sys.motion"],
+      "states": ["not-configured", "ready", "sender-configuration-required", "sender-revoked", "sender-rejected", "sender-unknown", "accounts-connected", "account-not-configured", "account-connecting", "account-expired-or-revoked", "account-error", "account-configuration-required", "account-connection-completed", "account-connection-denied", "account-connection-expired", "account-connection-invalid", "recent-authentication-required", "pin-changed", "pin-error"],
+      "capabilityClaims": ["Kindle destination is optional and masked outside its edit field", "Installed plugins are listed read-only and have no profile enable, disable, install, or configuration control", "Google and Amazon provider accounts are identity-only connections owned by an already PIN-authenticated profile and never authenticate a user into k", "Disconnect impact is informational in Phase 3 and cannot be submitted"]
+    }
+  ]
+}

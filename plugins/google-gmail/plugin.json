@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 2,
+  "protocolVersion": 2,
+  "pluginId": "google-gmail",
+  "displayName": "Google and Gmail",
+  "version": "1.0.0",
+  "entrypoint": "index.mjs",
+  "runtime": {
+    "allowedHosts": ["gmail.googleapis.com", "openidconnect.googleapis.com"],
+    "timeoutMs": 20000,
+    "maxRequestBytes": 1048576,
+    "maxResponseBytes": 1048576,
+    "maxArtifactBytes": 26214400
+  },
+  "capabilities": [
+    {
+      "capabilityId": "google-gmail/identity",
+      "family": "identity-provider",
+      "version": 1,
+      "commands": ["identity.resolve"],
+      "authorization": {
+        "kind": "profile-oauth2",
+        "registrationId": "google-gmail",
+        "requiredScopes": ["openid", "email"]
+      }
+    },
+    {
+      "capabilityId": "google-gmail/mail",
+      "family": "mail-sender",
+      "version": 1,
+      "commands": ["mail.preflight", "mail.send"],
+      "authorization": {
+        "kind": "profile-oauth2",
+        "registrationId": "google-gmail",
+        "requiredScopes": ["https://www.googleapis.com/auth/gmail.send"]
+      },
+      "artifactMediaTypes": ["message/rfc822"]
+    }
+  ],
+  "review": {
+    "policyRef": "docs/providers/policy.md",
+    "reviewedAt": "2026-07-18"
+  }
+}

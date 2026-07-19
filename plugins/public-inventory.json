@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "reviewRef": "docs/providers/policy.md",
+  "plugins": [
+    {
+      "pluginId": "project-gutenberg",
+      "schemaVersion": 1,
+      "protocolVersion": 1,
+      "reviewedAt": "2026-07-18",
+      "capabilities": [
+        { "capabilityId": "project-gutenberg/catalog", "classification": "public-domain-acquisition" }
+      ]
+    },
+    {
+      "pluginId": "standard-ebooks",
+      "schemaVersion": 1,
+      "protocolVersion": 1,
+      "reviewedAt": "2026-07-18",
+      "capabilities": [
+        { "capabilityId": "standard-ebooks/catalog", "classification": "public-domain-acquisition" }
+      ]
+    },
+    {
+      "pluginId": "internet-archive",
+      "schemaVersion": 1,
+      "protocolVersion": 1,
+      "reviewedAt": "2026-07-18",
+      "capabilities": [
+        { "capabilityId": "internet-archive/catalog", "classification": "public-domain-acquisition" }
+      ]
+    },
+    {
+      "pluginId": "google-books",
+      "schemaVersion": 2,
+      "protocolVersion": 2,
+      "reviewedAt": "2026-07-18",
+      "capabilities": [
+        { "capabilityId": "google-books/metadata", "classification": "metadata-only" }
+      ]
+    },
+    {
+      "pluginId": "google-gmail",
+      "schemaVersion": 2,
+      "protocolVersion": 2,
+      "reviewedAt": "2026-07-18",
+      "capabilities": [
+        { "capabilityId": "google-gmail/identity", "classification": "identity-only" },
+        { "capabilityId": "google-gmail/mail", "classification": "profile-bound-effect" }
+      ]
+    },
+    {
+      "pluginId": "login-with-amazon",
+      "schemaVersion": 2,
+      "protocolVersion": 2,
+      "reviewedAt": "2026-07-18",
+      "capabilities": [
+        { "capabilityId": "login-with-amazon/identity", "classification": "identity-only" }
+      ]
+    }
+  ]
+}

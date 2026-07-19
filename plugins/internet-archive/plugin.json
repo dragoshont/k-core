@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": 1,
+  "pluginId": "internet-archive",
+  "displayName": "Internet Archive",
+  "version": "1.0.0",
+  "entrypoint": "index.mjs",
+  "capabilities": ["search", "detail", "acquire"],
+  "allowedHosts": ["archive.org", "*.archive.org"],
+  "rightsBasis": "public-domain",
+  "rightsJurisdiction": "Record-specific Public Domain Mark or CC0",
+  "rightsReviewedAt": "2026-07-18",
+  "formats": ["epub"],
+  "timeoutMs": 25000,
+  "maxResponseBytes": 1048576,
+  "maxArtifactBytes": 26214400
+}

@@ -1,0 +1,996 @@
+openapi: 3.1.0
+info:
+  title: k Capability Plugin HTTP API
+  version: 0.8.0
+  license:
+    name: Apache License 2.0
+    identifier: Apache-2.0
+  description: >-
+    Target contract for capability-typed installed plugins, profile-owned provider
+    accounts, metadata evidence, Gmail mail submission, and OneDrive delivery. The
+    fixed-profile four-digit PIN remains the only k login method. Installed plugin
+    code is deployment controlled; household users connect accounts and select ready
+    destinations only.
+servers:
+  - url: https://k.example.invalid
+    description: Example private deployment
+x-implementation-phase: capability-platform
+x-contract-status: accepted
+x-plugin-contracts:
+  manifest: ./plugin-manifest.schema.json
+  protocolV2: ./plugin-protocol.v2.schema.json
+tags:
+  - name: Auth
+    description: Fixed household profiles and PIN sessions only.
+  - name: Catalog
+    description: Installed catalog sources plus additive metadata and capability evidence.
+  - name: Integrations
+    description: Read-only capability inventory and profile-owned provider connections.
+  - name: Delivery
+    description: Profile destinations and non-mutating revision-bound preflights.
+  - name: Operations
+    description: Durable acquisition, delivery, and account-disconnect operations.
+  - name: Profile
+    description: Profile-owned settings; plugin installation is never profile controlled.
+paths:
+  /api/v1/auth/profiles: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1profiles" }
+  /api/v1/auth/credential: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1credential" }
+  /api/v1/auth/login: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1login" }
+  /api/v1/auth/logout: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1logout" }
+  /api/v1/auth/reauthenticate: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1reauthenticate" }
+  /api/v1/session: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1session" }
+
+  /api/v1/catalog/search:
+    get:
+      summary: Search installed catalog sources and attach metadata evidence
+      tags: [Catalog]
+      operationId: searchCapabilityCatalog
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 200 }
+        - name: mediaKind
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/MediaKind" }
+      responses:
+        "200":
+          description: >-
+            Source results with additive metadata. Unsupported static integrations do
+            not make the response partial; a configured live provider failure does.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogSearchResponse" }
+        "400": { $ref: "./http.openapi.yaml#/components/responses/ValidationProblem" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "503": { $ref: "./http.openapi.yaml#/components/responses/AllPluginsFailed" }
+
+  /api/v1/catalog/items/{catalogRef}:
+    get:
+      summary: Read one source item with metadata and provider capability evidence
+      tags: [Catalog]
+      operationId: getCapabilityCatalogItem
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: catalogRef
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/OpaqueCatalogRef" }
+      responses:
+        "200":
+          description: Current source item and independently sourced evidence.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogItem" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./http.openapi.yaml#/components/responses/NotFound" }
+
+  /api/v1/me/capabilities:
+    get:
+      summary: List installed capabilities and explicit provider support states
+      tags: [Integrations]
+      operationId: listCapabilities
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: >-
+            Deployment-controlled capability inventory. It includes explicit static
+            unsupported and not-exposed records for Goodreads and Kindle Unlimited.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, checkedAt]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 128
+                    items: { $ref: "#/components/schemas/CapabilityView" }
+                  checkedAt: { type: string, format: date-time }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+
+  /api/v1/me/accounts:
+    get:
+      summary: List the current profile's provider account connections
+      tags: [Integrations]
+      operationId: listProviderAccounts
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Masked profile-owned connections; tokens and raw subjects are absent.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 16
+                    items: { $ref: "#/components/schemas/AccountConnectionView" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+
+  /api/v1/me/accounts/{connectorId}/authorizations:
+    post:
+      summary: Start a server-rendered provider account connection or replacement
+      description: >-
+        Requires an existing PIN-authenticated k session and recent PIN. Returns a
+        303 to the fixed deployment-registered provider authorization endpoint. This
+        endpoint never authenticates a profile into k.
+      tags: [Integrations]
+      operationId: startProviderAuthorization
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "./http.openapi.yaml#/components/parameters/CsrfToken"
+        - $ref: "#/components/parameters/ConnectorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [purpose, requestedCapabilities]
+              properties:
+                purpose: { type: string, enum: [connect, reconnect] }
+                requestedCapabilities:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  uniqueItems: true
+                  items: { type: string, enum: [identity-only, send-mail, save-to-onedrive] }
+      responses:
+        "303":
+          description: Continue at the fixed provider authorization endpoint.
+          headers:
+            Location:
+              required: true
+              schema: { type: string, format: uri }
+            Set-Cookie:
+              required: true
+              description: >-
+                One random browser binding in __Host-k.oauth; Path=/; Secure;
+                HttpOnly; SameSite=Lax; Max-Age=600. It is not the OAuth state.
+              schema: { type: string, minLength: 32, maxLength: 1024 }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./http.openapi.yaml#/components/responses/RecentAuthenticationRequired" }
+        "409": { $ref: "#/components/responses/IntegrationNotReady" }
+
+  /oauth/callback/google-gmail:
+    get:
+      summary: Complete a Google/Gmail account authorization transaction
+      tags: [Integrations]
+      operationId: completeGoogleGmailAuthorization
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OAuthCode"
+        - $ref: "#/components/parameters/OAuthState"
+        - $ref: "#/components/parameters/OAuthError"
+      responses:
+        "303": { $ref: "#/components/responses/OAuthCompletionRedirect" }
+
+  /oauth/callback/login-with-amazon:
+    get:
+      summary: Complete an identity-only Login with Amazon account connection
+      tags: [Integrations]
+      operationId: completeAmazonAuthorization
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OAuthCode"
+        - $ref: "#/components/parameters/OAuthState"
+        - $ref: "#/components/parameters/OAuthError"
+      responses:
+        "303": { $ref: "#/components/responses/OAuthCompletionRedirect" }
+
+  /oauth/callback/microsoft-onedrive:
+    get:
+      summary: Complete a Microsoft identity and OneDrive account connection
+      tags: [Integrations]
+      operationId: completeMicrosoftAuthorization
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OAuthCode"
+        - $ref: "#/components/parameters/OAuthState"
+        - $ref: "#/components/parameters/OAuthError"
+      responses:
+        "303": { $ref: "#/components/responses/OAuthCompletionRedirect" }
+
+  /profile/integrations/complete:
+    get:
+      summary: Render one local provider-connection completion result
+      description: >-
+        Consumes the opaque one-use __Host-k.integration browser receipt. The URL
+        contains no provider, code, state, token, external target, or provider error
+        text. A missing or invalid receipt renders a generic invalid result.
+      tags: [Integrations]
+      operationId: renderIntegrationCompletion
+      security: []
+      responses:
+        "200":
+          description: Server-rendered completion result with no third-party resources.
+          headers:
+            Cache-Control:
+              required: true
+              schema: { type: string, enum: [no-store] }
+            Referrer-Policy:
+              required: true
+              schema: { type: string, enum: [no-referrer] }
+            Set-Cookie:
+              required: true
+              description: Clears __Host-k.integration after one use.
+              schema: { type: string, minLength: 1, maxLength: 1024 }
+          content:
+            text/html:
+              schema: { type: string }
+
+  /api/v1/me/accounts/{accountId}/disconnect-preflights:
+    post:
+      summary: Preflight provider account disconnection and dependent impact
+      tags: [Integrations]
+      operationId: createAccountDisconnectPreflight
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "./http.openapi.yaml#/components/parameters/CsrfToken"
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Non-mutating, single-use impact snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DisconnectPreflight" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./http.openapi.yaml#/components/responses/RecentAuthenticationRequired" }
+        "404": { $ref: "./http.openapi.yaml#/components/responses/NotFound" }
+
+  /api/v1/me/destinations:
+    get:
+      summary: List profile-owned Kindle and OneDrive destinations
+      tags: [Delivery]
+      operationId: listDestinations
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Destination inventory with readiness and revision evidence.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 16
+                    items: { $ref: "#/components/schemas/DestinationSummary" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+
+  /api/v1/preflights/acquire-deliver:
+    post:
+      summary: Check installed-plugin acquisition and selected-destination readiness
+      tags: [Delivery]
+      operationId: createCapabilityAcquireDeliverPreflight
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "./http.openapi.yaml#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [pluginId, itemId, optionId, destinationId]
+              properties:
+                pluginId: { $ref: "#/components/schemas/PluginId" }
+                itemId: { $ref: "#/components/schemas/OpaqueId" }
+                optionId: { $ref: "#/components/schemas/OpaqueId" }
+                destinationId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Non-mutating readiness snapshot bound to current revisions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryPreflight" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./http.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/DestinationNotReady" }
+
+  /api/v1/operations:
+    get:
+      summary: List the current profile's durable operations
+      tags: [Operations]
+      operationId: listCapabilityOperations
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        "200":
+          description: Current profile's operations.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 50
+                    items: { $ref: "#/components/schemas/Operation" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+    post:
+      summary: Queue an acquisition-delivery or account-disconnect operation
+      tags: [Operations]
+      operationId: createCapabilityOperation
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "./http.openapi.yaml#/components/parameters/CsrfToken"
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 16, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [type, preflightId]
+              properties:
+                type: { type: string, enum: [acquire-deliver, disconnect-account] }
+                preflightId: { type: string, format: uuid }
+      responses:
+        "202":
+          description: Operation durably queued.
+          headers:
+            Location:
+              schema: { type: string, format: uri-reference }
+          content:
+            application/json:
+              schema: { $ref: "./http.openapi.yaml#/components/schemas/OperationReceipt" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./http.openapi.yaml#/components/responses/RecentAuthenticationRequired" }
+        "409": { $ref: "./http.openapi.yaml#/components/responses/StalePreflight" }
+
+  /api/v1/operations/{operationId}:
+    get:
+      summary: Read one profile-owned operation
+      tags: [Operations]
+      operationId: getCapabilityOperation
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "./http.openapi.yaml#/components/parameters/OperationId"
+      responses:
+        "200":
+          description: Current operation detail and destination evidence.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Operation" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./http.openapi.yaml#/components/responses/NotFound" }
+
+  /api/v1/operations/{operationId}/cancel:
+    post:
+      summary: Request safe operation cancellation
+      tags: [Operations]
+      operationId: cancelCapabilityOperation
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "./http.openapi.yaml#/components/parameters/CsrfToken"
+        - $ref: "./http.openapi.yaml#/components/parameters/OperationId"
+      responses:
+        "202":
+          description: Cancellation durably requested.
+          content:
+            application/json:
+              schema: { $ref: "./http.openapi.yaml#/components/schemas/OperationReceipt" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "409": { $ref: "./http.openapi.yaml#/components/responses/OperationNotCancelable" }
+
+  /api/v1/operations/{operationId}/confirm-received:
+    post:
+      summary: Record user-confirmed receipt for an accepted Kindle mail operation
+      tags: [Operations]
+      operationId: confirmCapabilityOperationReceived
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "./http.openapi.yaml#/components/parameters/CsrfToken"
+        - $ref: "./http.openapi.yaml#/components/parameters/OperationId"
+      responses:
+        "204": { description: Receipt evidence appended. }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "409": { $ref: "./http.openapi.yaml#/components/responses/OperationNotConfirmable" }
+
+  /api/v1/me/delivery: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1me~1delivery" }
+  /api/v1/me/pin: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1me~1pin" }
+  /api/v1/me/plugins: { $ref: "./http.phase-3.openapi.yaml#/paths/~1api~1v1~1me~1plugins" }
+  /healthz: { $ref: "./http.openapi.yaml#/paths/~1healthz" }
+  /readyz: { $ref: "./http.openapi.yaml#/paths/~1readyz" }
+
+components:
+  securitySchemes:
+    sessionCookie: { $ref: "./http.openapi.yaml#/components/securitySchemes/sessionCookie" }
+  parameters:
+    ConnectorId:
+      name: connectorId
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [google-gmail, login-with-amazon, microsoft-onedrive]
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OAuthCode:
+      name: code
+      in: query
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 4096 }
+    OAuthState:
+      name: state
+      in: query
+      required: true
+      schema: { type: string, minLength: 32, maxLength: 256 }
+    OAuthError:
+      name: error
+      in: query
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 128 }
+  schemas:
+    PluginId:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9-]{0,63}$"
+    OpaqueId:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    OpaqueCatalogRef:
+      type: string
+      maxLength: 258
+      pattern: "^plugin:[a-z0-9][a-z0-9-]{0,63}:[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    MediaKind:
+      type: string
+      enum: [book, movie]
+    ProviderAvailability:
+      type: string
+      enum: [available, configuration-required, eligibility-required, unavailable, unsupported, not-exposed]
+    AccountState:
+      type: string
+      enum: [not-configured, connecting, connected, expired-or-revoked, error]
+    DestinationState:
+      type: string
+      enum: [not-configured, ready, blocked, error]
+    EvidenceStamp:
+      type: object
+      additionalProperties: false
+      required: [sourceId, sourceLabel, sourceKind, checkedAt, scope, freshness]
+      properties:
+        sourceId: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,63}$" }
+        sourceLabel: { type: string, minLength: 1, maxLength: 120 }
+        sourceKind: { type: string, enum: [live-api, cached-api, static-policy, profile-record, operation-record] }
+        checkedAt: { type: string, format: date-time }
+        scope:
+          type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind: { type: string, enum: [public-catalog, profile, destination, operation] }
+            id: { type: [string, "null"], maxLength: 128 }
+        freshness: { type: string, enum: [fresh, stale, not-applicable] }
+    CapabilityView:
+      type: object
+      additionalProperties: false
+      required: [capabilityId, pluginId, displayName, family, version, installed, providerAvailability, maturity, mediaKinds, reasonCode, reason, evidence]
+      properties:
+        capabilityId: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,63}$" }
+        pluginId: { type: [string, "null"], pattern: "^[a-z0-9][a-z0-9-]{0,63}$" }
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        family: { type: string, enum: [catalog-source, metadata-enricher, identity-provider, mail-sender, delivery-destination, provider-policy] }
+        version: { type: integer, minimum: 1 }
+        installed: { type: boolean }
+        providerAvailability: { $ref: "#/components/schemas/ProviderAvailability" }
+        maturity: { type: string, enum: [stable, preview, policy-only] }
+        mediaKinds:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/MediaKind" }
+        reasonCode: { type: string, pattern: "^[A-Z][A-Z0-9_]{1,63}$" }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+        evidence: { $ref: "#/components/schemas/EvidenceStamp" }
+    AccountConnectionView:
+      type: object
+      additionalProperties: false
+      required: [connectorId, displayName, providerAvailability, state, authorizationPending, maskedAccount, grantedScopes, capabilities, revision, connectedAt, lastValidatedAt, canConnect, canReconnect, canDisconnect, reasonCode, reason, evidence]
+      properties:
+        accountId: { type: [string, "null"], format: uuid }
+        connectorId: { type: string, enum: [google-gmail, login-with-amazon, microsoft-onedrive] }
+        displayName: { type: string, maxLength: 120 }
+        providerAvailability: { $ref: "#/components/schemas/ProviderAvailability" }
+        state: { $ref: "#/components/schemas/AccountState" }
+        authorizationPending:
+          description: >-
+            True while a connect or replacement transaction is open. An existing
+            connected account remains connected and usable until replacement succeeds.
+          type: boolean
+        maskedAccount: { type: [string, "null"], maxLength: 254 }
+        grantedScopes:
+          type: array
+          maxItems: 12
+          uniqueItems: true
+          items: { type: string, maxLength: 200 }
+        capabilities:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items: { type: string, enum: [identity-only, send-mail, save-to-onedrive] }
+        revision: { type: integer, minimum: 0 }
+        connectedAt: { type: [string, "null"], format: date-time }
+        lastValidatedAt: { type: [string, "null"], format: date-time }
+        canConnect: { type: boolean }
+        canReconnect: { type: boolean }
+        canDisconnect: { type: boolean }
+        reasonCode: { type: string, pattern: "^[A-Z][A-Z0-9_]{1,63}$" }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+        evidence: { $ref: "#/components/schemas/EvidenceStamp" }
+      allOf:
+        - if:
+            properties:
+              state: { enum: [connected, expired-or-revoked, error] }
+            required: [state]
+          then:
+            required: [accountId]
+            properties:
+              accountId: { type: string, format: uuid }
+        - if:
+            properties:
+              state: { enum: [not-configured, connecting] }
+            required: [state]
+          then:
+            properties:
+              accountId: { type: "null" }
+    AccountConnection:
+      allOf:
+        - $ref: "#/components/schemas/AccountConnectionView"
+        - type: object
+          required: [accountId]
+          properties:
+            accountId: { type: string, format: uuid }
+            state: { type: string, enum: [connected, expired-or-revoked, error] }
+    MetadataContribution:
+      type: object
+      additionalProperties: false
+      required: [providerId, providerLabel, recordId, mediaKind, matchedBy, matchQuality, contributedFields, checkedAt, informationLink]
+      properties:
+        providerId: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,63}$" }
+        providerLabel: { type: string, maxLength: 120 }
+        recordId: { $ref: "#/components/schemas/OpaqueId" }
+        mediaKind: { $ref: "#/components/schemas/MediaKind" }
+        matchedBy: { type: string, enum: [isbn-10, isbn-13, oclc, lccn, imdb, tmdb, title-creator] }
+        matchQuality: { type: string, enum: [exact-identifier, exact-title-creator] }
+        contributedFields:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, enum: [title, subtitle, creators, publisher, published-date, description, page-count, categories, thumbnail, average-rating, ratings-count, information-link] }
+        averageRating: { type: [number, "null"], minimum: 1, maximum: 5 }
+        ratingsCount: { type: [integer, "null"], minimum: 0 }
+        checkedAt: { type: string, format: date-time }
+        informationLink: { type: [string, "null"], format: uri }
+    CapabilityEvidence:
+      type: object
+      additionalProperties: false
+      required: [providerId, capability, state, reasonCode, reason, evidence]
+      properties:
+        providerId: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,63}$" }
+        capability: { type: string, enum: [reviews, product-availability, kindle-unlimited, identity, mail, destination] }
+        state: { $ref: "#/components/schemas/ProviderAvailability" }
+        reasonCode: { type: string, pattern: "^[A-Z][A-Z0-9_]{1,63}$" }
+        reason: { type: string, maxLength: 300 }
+        prerequisite: { type: [string, "null"], maxLength: 300 }
+        evidence: { $ref: "#/components/schemas/EvidenceStamp" }
+    AcquisitionOption:
+      type: object
+      additionalProperties: false
+      required: [optionId, format, rightsBasis]
+      properties:
+        optionId: { $ref: "#/components/schemas/OpaqueId" }
+        format: { type: string, enum: [epub] }
+        rightsBasis: { type: string, enum: [public-domain, user-owned, licensed-private] }
+        estimatedBytes: { type: [integer, "null"], minimum: 0, maximum: 26214400 }
+    CatalogItem:
+      type: object
+      additionalProperties: false
+      required: [catalogRef, pluginId, itemId, mediaKind, title, creators, identifiers, capability, capabilityReason, provenance, acquisitionOptions, source, checkedAt, metadataEvidence, capabilityEvidence]
+      properties:
+        catalogRef: { $ref: "#/components/schemas/OpaqueCatalogRef" }
+        pluginId: { $ref: "#/components/schemas/PluginId" }
+        itemId: { $ref: "#/components/schemas/OpaqueId" }
+        mediaKind: { $ref: "#/components/schemas/MediaKind" }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        creators:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 300 }
+        identifiers:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [scheme, value]
+            properties:
+              scheme: { type: string, enum: [isbn-10, isbn-13, oclc, lccn, imdb, tmdb] }
+              value: { type: string, minLength: 1, maxLength: 128 }
+        publishedYear: { type: [integer, "null"], minimum: 1, maximum: 9999 }
+        edition: { type: [string, "null"], maxLength: 300 }
+        language: { type: [string, "null"], maxLength: 80 }
+        capability: { type: string, enum: [metadata-only, candidate, deliverable] }
+        capabilityReason: { type: string, maxLength: 300 }
+        provenance: { type: string, enum: [unverified-provenance, verified-public-domain] }
+        acquisitionOptions:
+          type: array
+          maxItems: 8
+          items: { $ref: "#/components/schemas/AcquisitionOption" }
+        source: { type: string, minLength: 1, maxLength: 120 }
+        checkedAt: { type: string, format: date-time }
+        metadataEvidence:
+          type: array
+          maxItems: 16
+          items: { $ref: "#/components/schemas/MetadataContribution" }
+        capabilityEvidence:
+          type: array
+          maxItems: 32
+          items: { $ref: "#/components/schemas/CapabilityEvidence" }
+      allOf:
+        - if:
+            properties: { capability: { const: metadata-only } }
+            required: [capability]
+          then:
+            properties:
+              provenance: { const: unverified-provenance }
+              acquisitionOptions: { maxItems: 0 }
+    CatalogSearchResponse:
+      type: object
+      additionalProperties: false
+      required: [query, mediaKind, items, partial, providers, searchedAt]
+      properties:
+        query: { type: string, minLength: 2, maxLength: 200 }
+        mediaKind: { $ref: "#/components/schemas/MediaKind" }
+        items:
+          type: array
+          maxItems: 24
+          items: { $ref: "#/components/schemas/CatalogItem" }
+        partial: { type: boolean }
+        providers:
+          type: array
+          maxItems: 128
+          items: { $ref: "#/components/schemas/CapabilityView" }
+        searchedAt: { type: string, format: date-time }
+    DestinationSummary:
+      type: object
+      additionalProperties: false
+      required: [destinationId, kind, state, label, displayTarget, route, revision, blockers, evidence]
+      properties:
+        destinationId: { type: string, format: uuid }
+        kind: { type: string, enum: [kindle-email, onedrive] }
+        state: { $ref: "#/components/schemas/DestinationState" }
+        label: { type: string, minLength: 1, maxLength: 120 }
+        displayTarget: { type: [string, "null"], maxLength: 254 }
+        route: { type: string, enum: [smtp, gmail-api, microsoft-graph] }
+        requiredAccountId: { type: [string, "null"], format: uuid }
+        revision: { type: integer, minimum: 0 }
+        blockers:
+          type: array
+          maxItems: 16
+          items: { $ref: "#/components/schemas/Issue" }
+        evidence: { $ref: "#/components/schemas/EvidenceStamp" }
+    Issue:
+      type: object
+      additionalProperties: false
+      required: [code, reason, source, checkedAt]
+      properties:
+        code: { type: string, pattern: "^[A-Z][A-Z0-9_]{1,63}$" }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+        remediation: { type: [string, "null"], maxLength: 300 }
+        source: { type: string, minLength: 1, maxLength: 120 }
+        checkedAt: { type: string, format: date-time }
+    DeliveryPreflight:
+      type: object
+      additionalProperties: false
+      required: [preflightId, ready, blockers, warnings, item, selectedOption, outputPlan, destination, revisionSnapshot, limits, recentAuthenticationRequired, plannedStages, plannedMutations, previousOperations, createdAt, expiresAt]
+      properties:
+        preflightId: { type: string, format: uuid }
+        ready: { type: boolean }
+        blockers:
+          type: array
+          items: { $ref: "#/components/schemas/Issue" }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/Issue" }
+        item: { $ref: "#/components/schemas/CatalogItem" }
+        selectedOption: { $ref: "#/components/schemas/AcquisitionOption" }
+        outputPlan:
+          type: object
+          additionalProperties: false
+          required: [outputMediaType, conversionRequired, metadataSources]
+          properties:
+            outputMediaType: { const: application/epub+zip }
+            conversionRequired: { type: boolean }
+            metadataSources:
+              type: array
+              maxItems: 16
+              items: { type: string, maxLength: 120 }
+        destination: { $ref: "#/components/schemas/DestinationSummary" }
+        revisionSnapshot:
+          type: object
+          additionalProperties: false
+          required: [sourcePluginDigest, destinationRevision]
+          properties:
+            sourcePluginDigest: { type: string, pattern: "^[a-f0-9]{64}$" }
+            destinationRevision: { type: integer, minimum: 0 }
+            accountId: { type: [string, "null"], format: uuid }
+            accountGrantRevision: { type: [integer, "null"], minimum: 0 }
+            senderRevision: { type: [integer, "null"], minimum: 0 }
+        limits:
+          type: object
+          additionalProperties: false
+          required: [maximumFileBytes, activeOperations, maximumActiveOperations]
+          properties:
+            maximumFileBytes: { type: integer, minimum: 1 }
+            estimatedFileBytes: { type: [integer, "null"], minimum: 0 }
+            activeOperations: { type: integer, minimum: 0 }
+            maximumActiveOperations: { type: integer, minimum: 1 }
+        recentAuthenticationRequired: { type: boolean }
+        plannedStages:
+          type: array
+          items: { $ref: "#/components/schemas/OperationStageName" }
+        plannedMutations:
+          type: array
+          maxItems: 16
+          items: { type: string, maxLength: 200 }
+        previousOperations: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    DisconnectPreflight:
+      type: object
+      additionalProperties: false
+      required: [preflightId, account, affectedDestinations, affectedOperations, upstreamRevocation, blockers, warnings, plannedStages, createdAt, expiresAt]
+      properties:
+        preflightId: { type: string, format: uuid }
+        account: { $ref: "#/components/schemas/AccountConnection" }
+        affectedDestinations:
+          type: array
+          maxItems: 16
+          items: { $ref: "#/components/schemas/DestinationSummary" }
+        affectedOperations:
+          type: object
+          additionalProperties: false
+          required: [cancelableQueued, running]
+          properties:
+            cancelableQueued: { type: integer, minimum: 0 }
+            running: { type: integer, minimum: 0 }
+        upstreamRevocation: { type: string, enum: [supported-project-wide, supported-grant, not-supported, unknown] }
+        blockers:
+          type: array
+          items: { $ref: "#/components/schemas/Issue" }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/Issue" }
+        plannedStages:
+          type: array
+          items: { type: string, enum: [block-new-use, revoke-upstream, remove-local-grant, block-destinations, cancel-safe-work, audit] }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    OperationStageName:
+      type: string
+      enum: [preflight, acquire, validate, metadata, convert, validate-output, deliver, cleanup, block-new-use, revoke-upstream, remove-local-grant, block-destinations, cancel-safe-work, audit]
+    OperationStage:
+      type: object
+      additionalProperties: false
+      required: [name, status, source, updatedAt]
+      properties:
+        name: { $ref: "#/components/schemas/OperationStageName" }
+        status: { type: string, enum: [not-started, queued, waiting, running, blocked, canceled, succeeded, failed, unknown] }
+        message: { type: [string, "null"], maxLength: 300 }
+        startedAt: { type: [string, "null"], format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+        source: { type: string, maxLength: 120 }
+        updatedAt: { type: string, format: date-time }
+        error: { anyOf: [{ $ref: "./http.openapi.yaml#/components/schemas/OperationError" }, { type: "null" }] }
+    KindleEvidence:
+      type: object
+      additionalProperties: false
+      required: [kind, state, transport, source, recordedAt]
+      properties:
+        kind: { const: kindle-email }
+        state: { type: string, enum: [not-submitted, provider-accepted, bounced, rejected, unknown, user-confirmed-received] }
+        transport: { type: string, enum: [smtp, gmail-api] }
+        providerMessageId: { type: [string, "null"], maxLength: 998 }
+        source: { type: string, maxLength: 120 }
+        recordedAt: { type: string, format: date-time }
+        confirmedBy: { type: [string, "null"], maxLength: 120 }
+    OneDriveEvidence:
+      type: object
+      additionalProperties: false
+      required: [kind, state, source, recordedAt]
+      properties:
+        kind: { const: onedrive }
+        state: { type: string, enum: [not-uploaded, uploading, provider-stored, unknown] }
+        driveItemId: { type: [string, "null"], maxLength: 256 }
+        name: { type: [string, "null"], maxLength: 200 }
+        sizeBytes: { type: [integer, "null"], minimum: 0 }
+        eTag: { type: [string, "null"], maxLength: 512 }
+        providerRequestId: { type: [string, "null"], maxLength: 256 }
+        source: { type: string, maxLength: 120 }
+        recordedAt: { type: string, format: date-time }
+    DestinationEvidence:
+      oneOf:
+        - $ref: "#/components/schemas/KindleEvidence"
+        - $ref: "#/components/schemas/OneDriveEvidence"
+      discriminator:
+        propertyName: kind
+        mapping:
+          kindle-email: "#/components/schemas/KindleEvidence"
+          onedrive: "#/components/schemas/OneDriveEvidence"
+    AccountDisconnectEvidence:
+      type: object
+      additionalProperties: false
+      required: [kind, state, upstreamRevocation, localCredentialsRemoved, source, recordedAt]
+      properties:
+        kind: { const: account-disconnect }
+        state: { type: string, enum: [not-started, completed, partial, failed] }
+        upstreamRevocation: { type: string, enum: [revoked, revocation-not-supported, revocation-unknown] }
+        localCredentialsRemoved: { type: boolean }
+        source: { type: string, maxLength: 120 }
+        recordedAt: { type: string, format: date-time }
+    LegacyDeliveryEvidence:
+      description: Deprecated compatibility view emitted for Kindle operations only.
+      allOf:
+        - $ref: "./http.openapi.yaml#/components/schemas/DeliveryEvidence"
+    Operation:
+      type: object
+      additionalProperties: false
+      required: [operationId, type, target, status, stages, attempt, cancelable, retryable, rerunnable, createdAt, updatedAt, correlationId]
+      properties:
+        operationId: { type: string, format: uuid }
+        type: { type: string, enum: [acquire-deliver, disconnect-account] }
+        target:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [kind, title, creators, provider, destinationId, destinationLabel]
+              properties:
+                kind: { const: delivery }
+                title: { type: string, maxLength: 500 }
+                creators:
+                  type: array
+                  maxItems: 20
+                  items: { type: string, maxLength: 300 }
+                provider: { type: string, maxLength: 120 }
+                destinationId: { type: string, format: uuid }
+                destinationLabel: { type: string, maxLength: 120 }
+            - type: object
+              additionalProperties: false
+              required: [kind, accountId, connectorId, maskedAccount]
+              properties:
+                kind: { const: account-disconnect }
+                accountId: { type: string, format: uuid }
+                connectorId: { type: string, enum: [google-gmail, login-with-amazon, microsoft-onedrive] }
+                maskedAccount: { type: [string, "null"], maxLength: 254 }
+        status: { type: string, enum: [queued, waiting, running, blocked, canceling, canceled, succeeded, failed, partial, expired, unknown] }
+        stages:
+          type: array
+          maxItems: 16
+          items: { $ref: "#/components/schemas/OperationStage" }
+        attempt: { type: integer, minimum: 1 }
+        cancelable: { type: boolean }
+        retryable: { type: boolean }
+        rerunnable: { type: boolean }
+        actionReason: { type: [string, "null"], maxLength: 300 }
+        retryAfter: { type: [integer, "null"], minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, "null"], format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+        correlationId: { type: string, maxLength: 128 }
+        destinationEvidence: { $ref: "#/components/schemas/DestinationEvidence" }
+        accountDisconnectEvidence: { $ref: "#/components/schemas/AccountDisconnectEvidence" }
+        deliveryEvidence:
+          anyOf:
+            - $ref: "#/components/schemas/LegacyDeliveryEvidence"
+            - type: "null"
+          deprecated: true
+      allOf:
+        - if:
+            properties:
+              type: { const: acquire-deliver }
+            required: [type]
+          then:
+            required: [destinationEvidence]
+            properties:
+              destinationEvidence: { $ref: "#/components/schemas/DestinationEvidence" }
+              accountDisconnectEvidence: false
+        - if:
+            properties:
+              type: { const: disconnect-account }
+            required: [type]
+          then:
+            required: [accountDisconnectEvidence]
+            properties:
+              accountDisconnectEvidence: { $ref: "#/components/schemas/AccountDisconnectEvidence" }
+              destinationEvidence: false
+              deliveryEvidence: { type: "null" }
+    Problem:
+      $ref: "./http.openapi.yaml#/components/schemas/Problem"
+  responses:
+    OAuthCompletionRedirect:
+      description: >-
+        Transaction consumed and redirected to a fixed local completion page with no
+        provider response parameters.
+      headers:
+        Location:
+          required: true
+          schema: { type: string, enum: [/profile/integrations/complete] }
+        Cache-Control:
+          required: true
+          schema: { type: string, enum: [no-store] }
+        Referrer-Policy:
+          required: true
+          schema: { type: string, enum: [no-referrer] }
+        Set-Cookie:
+          required: true
+          description: >-
+            Clears __Host-k.oauth and sets a separate opaque, one-use,
+            sixty-second __Host-k.integration completion receipt.
+          schema: { type: string, minLength: 32, maxLength: 2048 }
+    OAuthResponseInvalid:
+      description: State, browser binding, issuer, callback, PKCE, nonce, or token response was invalid.
+      content:
+        application/problem+json:
+          schema: { $ref: "./http.openapi.yaml#/components/schemas/Problem" }
+    OAuthTransactionExpired:
+      description: The one-use authorization transaction expired or was already consumed.
+      content:
+        application/problem+json:
+          schema: { $ref: "./http.openapi.yaml#/components/schemas/Problem" }
+    IntegrationNotReady:
+      description: Connector is unsupported, not configured, or eligibility gated.
+      content:
+        application/problem+json:
+          schema: { $ref: "./http.openapi.yaml#/components/schemas/Problem" }
+    DestinationNotReady:
+      description: Selected destination is blocked, stale, unconfigured, or requires account reconnection.
+      content:
+        application/problem+json:
+          schema: { $ref: "./http.openapi.yaml#/components/schemas/Problem" }

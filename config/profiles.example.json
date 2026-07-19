@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "profileId": "00000000-0000-4000-8000-000000000001",
+      "slug": "member-1",
+      "displayName": "Member 1"
+    },
+    {
+      "profileId": "00000000-0000-4000-8000-000000000002",
+      "slug": "member-2",
+      "displayName": "Member 2"
+    },
+    {
+      "profileId": "00000000-0000-4000-8000-000000000003",
+      "slug": "member-3",
+      "displayName": "Member 3"
+    }
+  ]
+}

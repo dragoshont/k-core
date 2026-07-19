@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "protocolVersion": 2,
+  "pluginId": "google-books",
+  "displayName": "Google Books",
+  "version": "1.0.0",
+  "entrypoint": "index.mjs",
+  "runtime": {
+    "allowedHosts": ["www.googleapis.com", "books.google.com"],
+    "timeoutMs": 10000,
+    "maxRequestBytes": 65536,
+    "maxResponseBytes": 1048576,
+    "maxArtifactBytes": 0
+  },
+  "capabilities": [
+    {
+      "capabilityId": "google-books/metadata",
+      "family": "metadata-enricher",
+      "version": 1,
+      "commands": ["metadata.enrich"],
+      "authorization": {
+        "kind": "application",
+        "registrationId": "google-books-api"
+      },
+      "mediaKinds": ["book"]
+    }
+  ],
+  "review": {
+    "policyRef": "docs/providers/policy.md",
+    "reviewedAt": "2026-07-18"
+  }
+}

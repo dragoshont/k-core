@@ -1,0 +1,175 @@
+openapi: 3.1.0
+info:
+  title: k Phase 2 HTTP API
+  version: 0.2.0
+  license:
+    name: Apache License 2.0
+    identifier: Apache-2.0
+  description: >-
+    Executable Phase 2 contract for private household authentication and Open
+    Library metadata discovery. Delivery, preflight, operation, acquisition,
+    conversion, and email paths are intentionally absent.
+servers:
+  - url: https://k.example.invalid
+    description: Example private deployment
+x-implementation-phase: 2
+paths:
+  /api/v1/auth/profiles:
+    $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1profiles"
+  /api/v1/auth/credential:
+    $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1credential"
+  /api/v1/auth/login:
+    $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1login"
+  /api/v1/auth/logout:
+    $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1logout"
+  /api/v1/auth/reauthenticate:
+    $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1reauthenticate"
+  /api/v1/session:
+    $ref: "./http.openapi.yaml#/paths/~1api~1v1~1session"
+  /api/v1/catalog/search:
+    get:
+      summary: Search Open Library metadata
+      tags: [Catalog]
+      operationId: searchPhase2Catalog
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 200 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: Open Library metadata-only search results.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MetadataSearchResponse" }
+        "400": { $ref: "./http.openapi.yaml#/components/responses/ValidationProblem" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "503": { $ref: "./http.openapi.yaml#/components/responses/AllProvidersFailed" }
+  /api/v1/catalog/items/{catalogRef}:
+    get:
+      summary: Read Open Library metadata detail
+      tags: [Catalog]
+      operationId: getPhase2CatalogItem
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: catalogRef
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^open-library:(work|edition):OL[0-9]+[WM]$"
+            maxLength: 80
+      responses:
+        "200":
+          description: Open Library metadata-only item with freshness evidence.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MetadataCatalogItem" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./http.openapi.yaml#/components/responses/NotFound" }
+        "503": { $ref: "./http.openapi.yaml#/components/responses/AllProvidersFailed" }
+  /api/v1/me/pin:
+    $ref: "./http.openapi.yaml#/paths/~1api~1v1~1me~1pin"
+  /healthz:
+    $ref: "./http.openapi.yaml#/paths/~1healthz"
+  /readyz:
+    $ref: "./http.openapi.yaml#/paths/~1readyz"
+components:
+  securitySchemes:
+    sessionCookie:
+      $ref: "./http.openapi.yaml#/components/securitySchemes/sessionCookie"
+  schemas:
+    MetadataFreshness:
+      type: object
+      additionalProperties: false
+      required: [state, fetchedAt, checkedAt]
+      properties:
+        state:
+          type: string
+          enum: [fresh, stale]
+        fetchedAt: { type: string, format: date-time }
+        checkedAt: { type: string, format: date-time }
+        staleReason:
+          type: [string, "null"]
+          description: Present only when stale cache is served after an upstream failure.
+    MetadataCatalogItem:
+      type: object
+      additionalProperties: false
+      required:
+        - catalogRef
+        - providerId
+        - providerItemId
+        - title
+        - authors
+        - capability
+        - capabilityReason
+        - acquisitionOptions
+        - source
+        - freshness
+      properties:
+        catalogRef:
+          type: string
+          pattern: "^open-library:(work|edition):OL[0-9]+[WM]$"
+        providerId: { const: open-library }
+        providerItemId: { type: string, minLength: 1, maxLength: 80 }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        authors:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 300 }
+        publishedYear: { type: [integer, "null"], minimum: 1, maximum: 9999 }
+        language: { type: [string, "null"], maxLength: 80 }
+        coverUrl:
+          type: [string, "null"]
+          format: uri
+          pattern: "^https://covers\\.openlibrary\\.org/"
+        identifiers:
+          type: object
+          additionalProperties: { type: string, maxLength: 100 }
+          maxProperties: 20
+        capability: { const: metadata-only }
+        capabilityReason:
+          type: string
+          minLength: 1
+          maxLength: 300
+        acquisitionOptions:
+          type: array
+          maxItems: 0
+          items: false
+        source: { const: Open Library }
+        freshness: { $ref: "#/components/schemas/MetadataFreshness" }
+    Phase2ProviderStatus:
+      type: object
+      additionalProperties: false
+      required: [providerId, displayName, support, source, freshness]
+      properties:
+        providerId: { const: open-library }
+        displayName: { const: Open Library }
+        support: { type: string, enum: [available, stale] }
+        source: { const: Open Library API }
+        freshness: { $ref: "#/components/schemas/MetadataFreshness" }
+        reason: { type: [string, "null"], maxLength: 300 }
+    MetadataSearchResponse:
+      type: object
+      additionalProperties: false
+      required: [query, items, partial, providers, searchedAt]
+      properties:
+        query: { type: string, minLength: 2, maxLength: 200 }
+        items:
+          type: array
+          maxItems: 24
+          items: { $ref: "#/components/schemas/MetadataCatalogItem" }
+        partial:
+          const: false
+          description: Phase 2 has exactly one metadata provider; stale cache is explicit in freshness.
+        providers:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items: { $ref: "#/components/schemas/Phase2ProviderStatus" }
+        nextCursor: { type: [string, "null"], maxLength: 512 }
+        searchedAt: { type: string, format: date-time }

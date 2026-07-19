@@ -1,0 +1,230 @@
+openapi: 3.1.0
+info:
+  title: k Phase 3 HTTP API
+  version: 0.3.0
+  license:
+    name: Apache License 2.0
+    identifier: Apache-2.0
+  description: >-
+    Executable Phase 3 contract for private household authentication, metadata
+    discovery, installed public-domain source plugins, preflight, and durable delivery
+    operations. Plugin installation and live infrastructure are operator-owned.
+servers:
+  - url: https://k.example.invalid
+    description: Example private deployment
+x-implementation-phase: 3
+paths:
+  /api/v1/auth/profiles: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1profiles" }
+  /api/v1/auth/credential: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1credential" }
+  /api/v1/auth/login: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1login" }
+  /api/v1/auth/logout: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1logout" }
+  /api/v1/auth/reauthenticate: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1reauthenticate" }
+  /api/v1/session: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1session" }
+  /api/v1/catalog/search:
+    get:
+      summary: Search installed source plugins
+      tags: [Catalog]
+      operationId: searchPluginCatalog
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 200 }
+      responses:
+        "200":
+          description: Installed-plugin search results; partial failures are explicit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PluginSearchResponse" }
+        "400": { $ref: "./http.openapi.yaml#/components/responses/ValidationProblem" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "503": { $ref: "./http.openapi.yaml#/components/responses/AllPluginsFailed" }
+  /api/v1/catalog/items/{catalogRef}:
+    get:
+      summary: Read one installed-plugin catalog item
+      tags: [Catalog]
+      operationId: getPluginCatalogItem
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: catalogRef
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/OpaqueCatalogRef" }
+      responses:
+        "200":
+          description: Current installed-plugin item and acquisition options.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PluginCatalogItem" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./http.openapi.yaml#/components/responses/NotFound" }
+  /api/v1/preflights/acquire-deliver:
+    post:
+      summary: Check installed-plugin acquisition and delivery readiness
+      tags: [Delivery]
+      operationId: createPluginAcquireDeliverPreflight
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "./http.openapi.yaml#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [pluginId, itemId, optionId]
+              properties:
+                pluginId: { $ref: "#/components/schemas/PluginId" }
+                itemId: { $ref: "#/components/schemas/OpaqueId" }
+                optionId: { $ref: "#/components/schemas/OpaqueId" }
+      responses:
+        "200":
+          description: Non-mutating readiness snapshot.
+          content:
+            application/json:
+              schema: { $ref: "./http.openapi.yaml#/components/schemas/DeliveryPreflight" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./http.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "./http.openapi.yaml#/components/responses/ConfigurationRequired" }
+  /api/v1/operations: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1operations" }
+  /api/v1/operations/{operationId}: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1operations~1{operationId}" }
+  /api/v1/operations/{operationId}/cancel: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1operations~1{operationId}~1cancel" }
+  /api/v1/operations/{operationId}/confirm-received: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1operations~1{operationId}~1confirm-received" }
+  /api/v1/me/delivery: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1me~1delivery" }
+  /api/v1/me/pin: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1me~1pin" }
+  /api/v1/me/plugins:
+    get:
+      summary: List installed active source plugins
+      tags: [Profile]
+      operationId: listInstalledPlugins
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Read-only installed plugin inventory.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 64
+                    items: { $ref: "#/components/schemas/ProfilePlugin" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+  /healthz: { $ref: "./http.openapi.yaml#/paths/~1healthz" }
+  /readyz: { $ref: "./http.openapi.yaml#/paths/~1readyz" }
+components:
+  securitySchemes:
+    sessionCookie: { $ref: "./http.openapi.yaml#/components/securitySchemes/sessionCookie" }
+  schemas:
+    PluginId:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9-]{0,63}$"
+    OpaqueId:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    OpaqueCatalogRef:
+      type: string
+      maxLength: 258
+      pattern: "^plugin:[a-z0-9][a-z0-9-]{0,63}:[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    PluginAcquisitionOption:
+      type: object
+      additionalProperties: false
+      required: [optionId, format, rightsBasis]
+      properties:
+        optionId: { $ref: "#/components/schemas/OpaqueId" }
+        format: { const: epub }
+        rightsBasis: { const: public-domain }
+        estimatedBytes: { type: [integer, "null"], minimum: 0, maximum: 26214400 }
+    PluginCatalogItem:
+      type: object
+      additionalProperties: false
+      required: [catalogRef, pluginId, itemId, title, authors, capability, capabilityReason, provenance, acquisitionOptions, source, checkedAt]
+      properties:
+        catalogRef: { $ref: "#/components/schemas/OpaqueCatalogRef" }
+        pluginId: { $ref: "#/components/schemas/PluginId" }
+        itemId: { $ref: "#/components/schemas/OpaqueId" }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        authors:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 300 }
+        publishedYear: { type: [integer, "null"], minimum: 1, maximum: 9999 }
+        language: { type: [string, "null"], maxLength: 80 }
+        capability: { type: string, enum: [metadata-only, candidate, deliverable] }
+        capabilityReason: { type: string, minLength: 1, maxLength: 300 }
+        provenance: { type: string, enum: [unverified-provenance, verified-public-domain] }
+        acquisitionOptions:
+          type: array
+          maxItems: 8
+          items: { $ref: "#/components/schemas/PluginAcquisitionOption" }
+        source: { type: string, minLength: 1, maxLength: 120 }
+        checkedAt: { type: string, format: date-time }
+      allOf:
+        - if:
+            properties: { capability: { const: metadata-only } }
+            required: [capability]
+          then:
+            properties:
+              provenance: { const: unverified-provenance }
+              acquisitionOptions: { maxItems: 0 }
+    PluginStatus:
+      type: object
+      additionalProperties: false
+      required: [pluginId, displayName, support, checkedAt]
+      properties:
+        pluginId: { $ref: "#/components/schemas/PluginId" }
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        support: { type: string, enum: [available, blocked, unavailable] }
+        checkedAt: { type: string, format: date-time }
+        reason: { type: [string, "null"], maxLength: 300 }
+    PluginSearchResponse:
+      type: object
+      additionalProperties: false
+      required: [query, items, partial, plugins, searchedAt]
+      properties:
+        query: { type: string, minLength: 2, maxLength: 200 }
+        items:
+          type: array
+          maxItems: 24
+          items: { $ref: "#/components/schemas/PluginCatalogItem" }
+        partial: { type: boolean }
+        plugins:
+          type: array
+          maxItems: 64
+          items: { $ref: "#/components/schemas/PluginStatus" }
+        searchedAt: { type: string, format: date-time }
+    ProfilePlugin:
+      type: object
+      additionalProperties: false
+      required: [pluginId, displayName, version, installed, support, capabilities, provenance, rightsBasis, reasonCode, checkedAt]
+      properties:
+        pluginId: { $ref: "#/components/schemas/PluginId" }
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        version: { type: string, minLength: 1, maxLength: 40 }
+        installed: { const: true }
+        support: { type: string, enum: [available, blocked, unavailable] }
+        capabilities:
+          type: array
+          uniqueItems: true
+          items: { type: string, enum: [search, detail, acquire] }
+        provenance: { type: string, enum: [unverified-provenance, verified-public-domain] }
+        rightsBasis: { type: [string, "null"], enum: [public-domain, null] }
+        reasonCode: { type: string, pattern: "^[A-Z][A-Z0-9_]{1,63}$" }
+        reason: { type: [string, "null"], maxLength: 300 }
+        checkedAt: { type: string, format: date-time }
+      allOf:
+        - if:
+            properties: { provenance: { const: unverified-provenance } }
+            required: [provenance]
+          then:
+            properties:
+              rightsBasis: { const: null }
+              capabilities:
+                not: { contains: { const: acquire } }

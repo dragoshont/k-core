@@ -1,0 +1,474 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://k.example.invalid/contracts/plugin-protocol.v2.schema.json",
+  "title": "k plugin protocol version 2",
+  "description": "Strict request and response envelopes for one short-lived capability invocation.",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/success" },
+    { "$ref": "#/$defs/failure" }
+  ],
+  "$defs": {
+    "invocationId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "capabilityId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "opaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    },
+    "mediaKind": { "type": "string", "enum": ["book", "movie"] },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mediaType", "sizeBytes", "sha256"],
+      "properties": {
+        "mediaType": { "type": "string", "pattern": "^[a-z0-9.+-]+/[a-z0-9.+-]+$" },
+        "sizeBytes": { "type": "integer", "minimum": 0, "maximum": 26214400 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "inputItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "creators", "identifiers"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "creators": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+        },
+        "identifiers": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["scheme", "value"],
+            "properties": {
+              "scheme": { "type": "string", "enum": ["isbn-10", "isbn-13", "oclc", "lccn", "imdb", "tmdb"] },
+              "value": { "type": "string", "minLength": 1, "maxLength": 128 }
+            }
+          }
+        }
+      }
+    },
+    "metadataFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "subtitle": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "creators": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+        },
+        "publisher": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "publishedDate": { "type": "string", "minLength": 4, "maxLength": 32 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 8000 },
+        "pageCount": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "categories": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+        },
+        "averageRating": { "type": "number", "minimum": 1, "maximum": 5 },
+        "ratingsCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "metadataMatchedResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "providerId", "providerLabel", "recordId", "mediaKind", "matchedBy", "matchQuality", "fields", "checkedAt", "informationLink"],
+      "properties": {
+        "state": { "const": "matched" },
+        "providerId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "providerLabel": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "recordId": { "$ref": "#/$defs/opaqueId" },
+        "mediaKind": { "$ref": "#/$defs/mediaKind" },
+        "matchedBy": { "type": "string", "enum": ["isbn-10", "isbn-13", "oclc", "lccn", "imdb", "tmdb", "title-creator"] },
+        "matchQuality": { "type": "string", "enum": ["exact-identifier", "exact-title-creator"] },
+        "fields": { "$ref": "#/$defs/metadataFields" },
+        "checkedAt": { "type": "string", "format": "date-time" },
+        "informationLink": { "type": "string", "format": "uri", "maxLength": 2048 }
+      }
+    },
+    "metadataNoMatchResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "providerId", "providerLabel", "mediaKind", "reasonCode", "checkedAt"],
+      "properties": {
+        "state": { "const": "no-match" },
+        "providerId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "providerLabel": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "mediaKind": { "$ref": "#/$defs/mediaKind" },
+        "reasonCode": { "type": "string", "enum": ["NO_EXACT_MATCH", "AMBIGUOUS_MATCH"] },
+        "checkedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "metadataResult": {
+      "oneOf": [
+        { "$ref": "#/$defs/metadataMatchedResult" },
+        { "$ref": "#/$defs/metadataNoMatchResult" }
+      ]
+    },
+    "catalogAcquisitionOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["optionId", "format", "rightsBasis", "estimatedBytes"],
+      "properties": {
+        "optionId": { "$ref": "#/$defs/opaqueId" },
+        "format": { "const": "epub" },
+        "rightsBasis": { "const": "public-domain" },
+        "estimatedBytes": { "type": ["integer", "null"], "minimum": 0, "maximum": 26214400 }
+      }
+    },
+    "catalogItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["acquisitionOptions", "authors", "capability", "capabilityReason", "checkedAt", "itemId", "language", "pluginId", "publishedYear", "source", "title"],
+      "properties": {
+        "acquisitionOptions": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/catalogAcquisitionOption" }
+        },
+        "authors": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+        },
+        "capability": { "type": "string", "enum": ["metadata-only", "candidate", "deliverable"] },
+        "capabilityReason": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "checkedAt": { "type": "string", "format": "date-time" },
+        "identifiers": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["scheme", "value"],
+            "properties": {
+              "scheme": { "type": "string", "enum": ["isbn-10", "isbn-13", "oclc", "lccn"] },
+              "value": { "type": "string", "minLength": 1, "maxLength": 128 }
+            }
+          }
+        },
+        "itemId": { "$ref": "#/$defs/opaqueId" },
+        "language": { "type": ["string", "null"], "maxLength": 80 },
+        "pluginId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "publishedYear": { "type": ["integer", "null"], "minimum": 1, "maximum": 9999 },
+        "source": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 500 }
+      }
+    },
+    "catalogSearchResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "query", "searchedAt"],
+      "properties": {
+        "items": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/catalogItem" } },
+        "query": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "searchedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "identityResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providerId", "subject", "maskedAccount", "checkedAt"],
+      "properties": {
+        "providerId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "subject": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "maskedAccount": { "type": ["string", "null"], "maxLength": 254 },
+        "checkedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "authorization": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value", "expiresAt"],
+          "properties": {
+            "kind": { "const": "bearer" },
+            "value": { "type": "string", "minLength": 20, "maxLength": 8192 },
+            "expiresAt": { "type": "string", "format": "date-time" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "api-key" },
+            "value": { "type": "string", "minLength": 16, "maxLength": 1024 }
+          }
+        }
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "invocationId", "capabilityId", "command", "input"],
+      "properties": {
+        "protocolVersion": { "const": 2 },
+        "invocationId": { "$ref": "#/$defs/invocationId" },
+        "capabilityId": { "$ref": "#/$defs/capabilityId" },
+        "command": {
+          "type": "string",
+          "enum": [
+            "catalog.search", "catalog.detail", "catalog.acquire",
+            "metadata.enrich", "identity.resolve", "mail.preflight", "mail.send",
+            "destination.preflight", "destination.deliver", "destination.reconcile"
+          ]
+        },
+        "authorization": { "$ref": "#/$defs/authorization" },
+        "input": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "command": { "const": "catalog.search" } }, "required": ["command"] },
+          "then": {
+            "properties": {
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["query", "mediaKind"],
+                "properties": {
+                  "query": { "type": "string", "minLength": 2, "maxLength": 200 },
+                  "mediaKind": { "$ref": "#/$defs/mediaKind" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "command": { "const": "catalog.detail" } }, "required": ["command"] },
+          "then": {
+            "properties": {
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["itemId", "mediaKind"],
+                "properties": {
+                  "itemId": { "$ref": "#/$defs/opaqueId" },
+                  "mediaKind": { "$ref": "#/$defs/mediaKind" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "command": { "const": "catalog.acquire" } }, "required": ["command"] },
+          "then": {
+            "properties": {
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["itemId", "optionId", "destinationPath"],
+                "properties": {
+                  "itemId": { "$ref": "#/$defs/opaqueId" },
+                  "optionId": { "$ref": "#/$defs/opaqueId" },
+                  "destinationPath": { "type": "string", "minLength": 1, "maxLength": 1024 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "command": { "const": "metadata.enrich" } }, "required": ["command"] },
+          "then": {
+            "properties": {
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["mediaKind", "item"],
+                "properties": {
+                  "mediaKind": { "$ref": "#/$defs/mediaKind" },
+                  "item": { "$ref": "#/$defs/inputItem" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "command": { "const": "identity.resolve" } }, "required": ["command"] },
+          "then": { "properties": { "input": { "type": "object", "additionalProperties": false, "maxProperties": 0 } } }
+        },
+        {
+          "if": { "properties": { "command": { "const": "mail.preflight" } }, "required": ["command"] },
+          "then": {
+            "properties": {
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["messageBytes", "attachmentBytes"],
+                "properties": {
+                  "messageBytes": { "type": "integer", "minimum": 1, "maximum": 36700160 },
+                  "attachmentBytes": { "type": "integer", "minimum": 1, "maximum": 26214400 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "command": { "const": "mail.send" } }, "required": ["command"] },
+          "then": {
+            "properties": {
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["messagePath", "messageId", "recipient"],
+                "properties": {
+                  "messagePath": { "type": "string", "minLength": 1, "maxLength": 1024 },
+                  "messageId": { "type": "string", "minLength": 3, "maxLength": 998 },
+                  "recipient": { "type": "string", "format": "email", "maxLength": 254 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "command": { "const": "destination.preflight" } }, "required": ["command"] },
+          "then": {
+            "properties": {
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["artifact"],
+                "properties": { "artifact": { "$ref": "#/$defs/artifact" } }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "command": { "const": "destination.deliver" } }, "required": ["command"] },
+          "then": {
+            "properties": {
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["artifact", "artifactPath", "fileName", "operationKey"],
+                "properties": {
+                  "artifact": { "$ref": "#/$defs/artifact" },
+                  "artifactPath": { "type": "string", "minLength": 1, "maxLength": 1024 },
+                  "fileName": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._()'-]{0,199}$" },
+                  "operationKey": { "$ref": "#/$defs/opaqueId" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "command": { "const": "destination.reconcile" } }, "required": ["command"] },
+          "then": {
+            "properties": {
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["fileName", "operationKey", "expectedSizeBytes"],
+                "properties": {
+                  "fileName": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._()'-]{0,199}$" },
+                  "operationKey": { "$ref": "#/$defs/opaqueId" },
+                  "expectedSizeBytes": { "type": "integer", "minimum": 1, "maximum": 26214400 }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "safeValue": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "type": "null" },
+        { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/safeValue" } },
+        { "$ref": "#/$defs/safeObject" }
+      ]
+    },
+    "safeObject": {
+      "type": "object",
+      "maxProperties": 100,
+      "propertyNames": {
+        "not": { "pattern": "[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll]|[Cc][Oo][Oo][Kk][Ii][Ee]|[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Pp][Hh][Rr][Aa][Ss][Ee]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Pp][Rr][Ii][Vv][Aa][Tt][Ee][_-]?[Kk][Ee][Yy]|[Aa][Cc][Cc][Ee][Ss][Ss][_-]?[Kk][Ee][Yy]" }
+      },
+      "additionalProperties": { "$ref": "#/$defs/safeValue" }
+    },
+    "success": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "invocationId", "capabilityId", "command", "ok", "result"],
+      "properties": {
+        "protocolVersion": { "const": 2 },
+        "invocationId": { "$ref": "#/$defs/invocationId" },
+        "capabilityId": { "$ref": "#/$defs/capabilityId" },
+        "command": {
+          "type": "string",
+          "enum": [
+            "catalog.search", "catalog.detail", "catalog.acquire",
+            "metadata.enrich", "identity.resolve", "mail.preflight", "mail.send",
+            "destination.preflight", "destination.deliver", "destination.reconcile"
+          ]
+        },
+        "ok": { "const": true },
+        "result": { "$ref": "#/$defs/safeObject" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "command": { "const": "catalog.search" } }, "required": ["command"] },
+          "then": { "properties": { "result": { "$ref": "#/$defs/catalogSearchResult" } } }
+        },
+        {
+          "if": { "properties": { "command": { "const": "catalog.detail" } }, "required": ["command"] },
+          "then": { "properties": { "result": { "$ref": "#/$defs/catalogItem" } } }
+        },
+        {
+          "if": { "properties": { "command": { "const": "catalog.acquire" } }, "required": ["command"] },
+          "then": { "properties": { "result": { "$ref": "#/$defs/artifact" } } }
+        },
+        {
+          "if": { "properties": { "command": { "const": "metadata.enrich" } }, "required": ["command"] },
+          "then": { "properties": { "result": { "$ref": "#/$defs/metadataResult" } } }
+        },
+        {
+          "if": { "properties": { "command": { "const": "identity.resolve" } }, "required": ["command"] },
+          "then": { "properties": { "result": { "$ref": "#/$defs/identityResult" } } }
+        }
+      ]
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "invocationId", "ok", "error"],
+      "properties": {
+        "protocolVersion": { "const": 2 },
+        "invocationId": { "$ref": "#/$defs/invocationId" },
+        "ok": { "const": false },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "retryable"],
+          "properties": {
+            "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+            "message": { "type": "string", "minLength": 1, "maxLength": 300 },
+            "retryable": { "type": "boolean" },
+            "retryAfterSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 }
+          }
+        }
+      }
+    }
+  }
+}

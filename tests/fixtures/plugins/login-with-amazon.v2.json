@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "protocolVersion": 2,
+  "pluginId": "login-with-amazon",
+  "displayName": "Login with Amazon",
+  "version": "1.0.0",
+  "entrypoint": "index.mjs",
+  "runtime": {
+    "allowedHosts": ["api.amazon.com"],
+    "timeoutMs": 10000,
+    "maxRequestBytes": 65536,
+    "maxResponseBytes": 262144,
+    "maxArtifactBytes": 0
+  },
+  "capabilities": [
+    {
+      "capabilityId": "login-with-amazon/identity",
+      "family": "identity-provider",
+      "version": 1,
+      "commands": ["identity.resolve"],
+      "authorization": {
+        "kind": "profile-oauth2",
+        "registrationId": "login-with-amazon",
+        "requiredScopes": ["profile:user_id"]
+      }
+    }
+  ],
+  "review": {
+    "policyRef": "docs/providers/policy.md",
+    "reviewedAt": "2026-07-18"
+  }
+}

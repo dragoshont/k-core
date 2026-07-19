@@ -1,0 +1,50 @@
+{
+  "platform": "web",
+  "stack": "react",
+  "designSource": {
+    "type": "storybook",
+    "path": ".storybook",
+    "url": "http://localhost:6006",
+    "spec": "docs/ui/design-spec.md"
+  },
+  "designMap": "docs/design/ui-map.json",
+  "tokens": "tokens/tokens.json",
+  "tokenBuild": "npm run tokens",
+  "knowledgePack": "web",
+  "applyTo": ["src/ui/**", "src/hosts/web/**", "docs/ui/**"],
+  "build": "npm run build",
+  "test": "npm test",
+  "screenshot": "npm run test:visual",
+  "backend": {
+    "stack": "node",
+    "solution": ".",
+    "architectureDocs": [
+      "docs/architecture.md",
+      "docs/adr",
+      "docs/security/threat-model.md",
+      "docs/providers/policy.md"
+    ],
+    "contracts": "contracts/http.capabilities.phase-3.openapi.yaml",
+    "applyTo": ["src/modules/**", "src/hosts/worker/**", "migrations/**", "tests/**"],
+    "build": "npm run build",
+    "test": "npm test"
+  },
+  "ops": {
+    "kind": "homelab-mcp",
+    "mode": "read-only",
+    "mcpServer": "homelab",
+    "purpose": ["runtime-health", "logs", "deployment-verification", "version-drift"],
+    "requiresApprovalFor": ["mutations", "reconcile", "restart", "secret-access", "network-change"]
+  },
+  "learning": {
+    "runArtifactsPath": ".architrave/runs",
+    "repoProfilePath": ".architrave/learning/repo-profile.md",
+    "lessonsPath": ".architrave/learning/repo-lessons.md",
+    "capture": ["run-artifacts", "gate-results", "judge-verdicts", "runtime-evidence", "repo-profile", "lessons"],
+    "redactionPolicy": "no-secrets",
+    "staleFactPolicy": "validate-before-use",
+    "promotionPolicy": "approval-required",
+    "promoteAfterOccurrences": 2,
+    "promoteTargets": ["architrave.config.json", "AGENTS.md", ".github/instructions", "docs"]
+  }
+}

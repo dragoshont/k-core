@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://k.example.invalid/contracts/provider-registrations.schema.json",
+  "title": "k provider connector registrations",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "connectors"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "connectors": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "$ref": "#/$defs/connector" }
+    }
+  },
+  "$defs": {
+    "httpsUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://",
+      "maxLength": 1024
+    },
+    "connector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "connectorId", "registrationId", "issuer", "authorizationEndpoint",
+        "tokenEndpoint", "tokenEndpointAuthMethod", "identityEndpoint", "clientId", "clientSecretEnv",
+        "callbackPath", "pluginId", "capabilityId", "oidc", "capabilityScopes"
+      ],
+      "properties": {
+        "connectorId": { "type": "string", "enum": ["google-gmail", "login-with-amazon"] },
+        "registrationId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "issuer": { "$ref": "#/$defs/httpsUrl" },
+        "authorizationEndpoint": { "$ref": "#/$defs/httpsUrl" },
+        "tokenEndpoint": { "$ref": "#/$defs/httpsUrl" },
+      "tokenEndpointAuthMethod": {
+      "type": "string",
+      "enum": ["client_secret_post", "client_secret_basic"]
+    },
+        "identityEndpoint": { "$ref": "#/$defs/httpsUrl" },
+        "jwksUri": { "oneOf": [{ "$ref": "#/$defs/httpsUrl" }, { "type": "null" }] },
+        "revocationEndpoint": { "oneOf": [{ "$ref": "#/$defs/httpsUrl" }, { "type": "null" }] },
+        "clientId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "clientSecretEnv": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,127}$" },
+        "callbackPath": {
+          "type": "string",
+          "enum": ["/oauth/callback/google-gmail", "/oauth/callback/login-with-amazon"]
+        },
+        "pluginId": { "type": "string", "enum": ["google-gmail", "login-with-amazon"] },
+        "capabilityId": {
+          "type": "string",
+          "enum": ["google-gmail/identity", "login-with-amazon/identity"]
+        },
+        "oidc": { "type": "boolean" },
+        "capabilityScopes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["identity-only"],
+          "properties": {
+            "identity-only": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "oidc": { "const": true } }, "required": ["oidc"] },
+          "then": { "required": ["jwksUri"], "properties": { "jwksUri": { "$ref": "#/$defs/httpsUrl" } } }
+        },
+        {
+          "if": { "properties": { "oidc": { "const": false } }, "required": ["oidc"] },
+          "then": { "required": ["jwksUri"], "properties": { "jwksUri": { "type": "null" } } }
+        }
+      ]
+    }
+  }
+}

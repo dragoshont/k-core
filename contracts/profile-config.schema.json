@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://k.example.invalid/contracts/profile-config.schema.json",
+  "title": "k profile configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "profiles"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "profiles": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        { "$ref": "#/$defs/profile1" },
+        { "$ref": "#/$defs/profile2" },
+        { "$ref": "#/$defs/profile3" }
+      ],
+      "items": false
+    }
+  },
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]{0,63}$",
+      "not": {
+        "anyOf": [
+          {
+            "enum": [
+              "activity", "admin", "api", "auth", "healthz", "oauth",
+              "operations", "profile", "profiles", "readyz", "search",
+              "session", "setup", "unlock"
+            ]
+          },
+          {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          }
+        ]
+      }
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^\\S(?:[^\\u0000-\\u001F\\u007F-\\u009F\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]*\\S)?$"
+    },
+    "profileBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId", "slug", "displayName"],
+      "properties": {
+        "profileId": { "type": "string", "format": "uuid" },
+        "slug": { "$ref": "#/$defs/slug" },
+        "displayName": { "$ref": "#/$defs/displayName" }
+      }
+    },
+    "profile1": {
+      "allOf": [
+        { "$ref": "#/$defs/profileBase" },
+        {
+          "type": "object",
+          "properties": { "profileId": { "const": "00000000-0000-4000-8000-000000000001" } }
+        }
+      ]
+    },
+    "profile2": {
+      "allOf": [
+        { "$ref": "#/$defs/profileBase" },
+        {
+          "type": "object",
+          "properties": { "profileId": { "const": "00000000-0000-4000-8000-000000000002" } }
+        }
+      ]
+    },
+    "profile3": {
+      "allOf": [
+        { "$ref": "#/$defs/profileBase" },
+        {
+          "type": "object",
+          "properties": { "profileId": { "const": "00000000-0000-4000-8000-000000000003" } }
+        }
+      ]
+    }
+  }
+}

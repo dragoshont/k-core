@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 2,
+  "protocolVersion": 2,
+  "pluginId": "unverified-book-source",
+  "displayName": "Unverified Book Source",
+  "version": "1.0.0",
+  "entrypoint": "index.mjs",
+  "runtime": {
+    "allowedHosts": ["catalog.example.invalid"],
+    "timeoutMs": 10000,
+    "maxRequestBytes": 65536,
+    "maxResponseBytes": 1048576,
+    "maxArtifactBytes": 0
+  },
+  "capabilities": [
+    {
+      "capabilityId": "unverified-book-source/books",
+      "family": "catalog-source",
+      "version": 1,
+      "commands": ["catalog.search", "catalog.detail"],
+      "authorization": { "kind": "none" },
+      "mediaKinds": ["book"]
+    }
+  ],
+  "review": {
+    "policyRef": "docs/providers/policy.md",
+    "reviewedAt": "2026-07-19"
+  }
+}

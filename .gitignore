@@ -1,0 +1,16 @@
+node_modules/
+build/
+dist/
+coverage/
+storybook-static/
+playwright-report/
+test-results/
+.env
+.env.*
+!.env.example
+.oss-private-denylist
+private-config/
+*.log
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,812 @@
+openapi: 3.1.0
+info:
+  title: k HTTP API
+  version: 0.1.0
+  license:
+    name: Apache License 2.0
+    identifier: Apache-2.0
+  description: >-
+    Same-origin contract for fixed-profile PIN authentication, federated book
+    discovery, delivery preflight, and durable operations. Metadata discovery
+    never implies acquisition rights or delivery.
+servers:
+  - url: https://k.example.invalid
+    description: Example private deployment
+tags:
+  - name: Authentication
+    description: Fixed household profiles, PIN sessions, and recent authentication.
+  - name: Catalog
+    description: Federated metadata discovery with provider evidence and capability honesty.
+  - name: Delivery
+    description: Non-mutating acquisition and delivery readiness checks.
+  - name: Operations
+    description: Durable, profile-owned acquisition and email submission operations.
+  - name: Profile
+    description: Optional Kindle destination and sender readiness settings.
+paths:
+  /api/v1/auth/profiles:
+    x-implementation-phase: 2
+    get:
+      summary: List the three configured household profiles
+      tags: [Authentication]
+      operationId: listProfiles
+      security: []
+      responses:
+        "200":
+          description: Configured household profiles and non-sensitive credential state.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [profiles, csrfToken]
+                properties:
+                  profiles:
+                    type: array
+                    minItems: 3
+                    maxItems: 3
+                    items:
+                      $ref: "#/components/schemas/ProfileSummary"
+                  csrfToken:
+                    type: string
+                    minLength: 32
+                    maxLength: 256
+  /api/v1/auth/credential:
+    x-implementation-phase: 2
+    post:
+      summary: Redeem a setup or recovery code and set a PIN
+      tags: [Authentication]
+      operationId: setPinWithCredentialCode
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [profileId, credentialCode, pin, csrfToken]
+              properties:
+                profileId:
+                  type: string
+                  format: uuid
+                credentialCode:
+                  type: string
+                  pattern: "^[A-Za-z0-9_-]{43}$"
+                pin:
+                  type: string
+                  pattern: "^[0-9]{4}$"
+                csrfToken:
+                  type: string
+                  minLength: 32
+                  maxLength: 256
+      responses:
+        "204":
+          description: PIN set, credential code consumed, and profile sessions revoked.
+        "401": { $ref: "#/components/responses/CredentialCodeFailed" }
+        "409": { $ref: "#/components/responses/CredentialStateConflict" }
+        "422": { $ref: "#/components/responses/PinNotAllowed" }
+        "429": { $ref: "#/components/responses/AuthThrottled" }
+  /api/v1/auth/login:
+    x-implementation-phase: 2
+    post:
+      summary: Unlock a fixed household profile
+      tags: [Authentication]
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [profileId, pin, csrfToken]
+              properties:
+                profileId:
+                  type: string
+                  format: uuid
+                pin:
+                  type: string
+                  pattern: "^[0-9]{4}$"
+                csrfToken:
+                  type: string
+                  minLength: 32
+                  maxLength: 256
+      responses:
+        "204":
+          description: Session created and cookie rotated.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/AuthFailed" }
+        "429": { $ref: "#/components/responses/AuthThrottled" }
+  /api/v1/auth/logout:
+    x-implementation-phase: 2
+    post:
+      summary: Revoke the current session
+      tags: [Authentication]
+      operationId: logout
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "204": { description: Session revoked. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/auth/reauthenticate:
+    x-implementation-phase: 2
+    post:
+      summary: Re-enter the PIN for a sensitive action
+      tags: [Authentication]
+      operationId: reauthenticate
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [pin, csrfToken]
+              properties:
+                pin: { type: string, pattern: "^[0-9]{4}$" }
+                csrfToken: { type: string, minLength: 32, maxLength: 256 }
+      responses:
+        "204": { description: Recent-authentication timestamp updated and session rotated. }
+        "401": { $ref: "#/components/responses/AuthFailed" }
+        "429": { $ref: "#/components/responses/AuthThrottled" }
+  /api/v1/session:
+    x-implementation-phase: 2
+    get:
+      summary: Read the current profile session
+      tags: [Authentication]
+      operationId: getSession
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Current session.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/catalog/search:
+    x-implementation-phase: 2
+    get:
+      summary: Search installed source plugins
+      tags: [Catalog]
+      operationId: searchCatalog
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 200 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: Normalized results. Partial source failure is represented in the body.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PluginSearchResponse" }
+        "400": { $ref: "#/components/responses/ValidationProblem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/AllPluginsFailed" }
+  /api/v1/catalog/items/{catalogRef}:
+    x-implementation-phase: 2
+    get:
+      summary: Read one installed-plugin catalog item
+      tags: [Catalog]
+      operationId: getCatalogItem
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: catalogRef
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/OpaqueCatalogRef" }
+      responses:
+        "200":
+          description: Current normalized item with provider evidence.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PluginCatalogItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/preflights/acquire-deliver:
+    x-implementation-phase: 3
+    post:
+      summary: Check acquisition and delivery readiness
+      tags: [Delivery]
+      operationId: createAcquireDeliverPreflight
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [pluginId, itemId, optionId]
+              properties:
+                pluginId: { $ref: "#/components/schemas/PluginId" }
+                itemId: { $ref: "#/components/schemas/OpaqueId" }
+                optionId: { $ref: "#/components/schemas/OpaqueId" }
+      responses:
+        "200":
+          description: Non-mutating readiness snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliveryPreflight" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/ConfigurationRequired" }
+  /api/v1/operations:
+    x-implementation-phase: 3
+    get:
+      summary: List the current profile's operations
+      tags: [Operations]
+      operationId: listOperations
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: Current profile's operations.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Operation" }
+                  nextCursor: { type: [string, "null"] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Queue an acquisition and delivery operation
+      tags: [Operations]
+      operationId: createOperation
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [type, preflightId]
+              properties:
+                type: { const: acquire-deliver }
+                preflightId: { type: string, format: uuid }
+      responses:
+        "202":
+          description: Operation durably queued.
+          headers:
+            Location:
+              schema: { type: string }
+            Retry-After:
+              schema: { type: integer, minimum: 1, maximum: 60 }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationReceipt" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/RecentAuthenticationRequired" }
+        "409": { $ref: "#/components/responses/StalePreflight" }
+  /api/v1/operations/{operationId}:
+    x-implementation-phase: 3
+    get:
+      summary: Read one profile-owned operation
+      tags: [Operations]
+      operationId: getOperation
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OperationId"
+      responses:
+        "200":
+          description: Current profile's operation detail.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Operation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/operations/{operationId}/cancel:
+    x-implementation-phase: 3
+    post:
+      summary: Request safe operation cancellation
+      tags: [Operations]
+      operationId: cancelOperation
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OperationId"
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "202":
+          description: Cancellation durably requested.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationReceipt" }
+        "409": { $ref: "#/components/responses/OperationNotCancelable" }
+  /api/v1/operations/{operationId}/confirm-received:
+    x-implementation-phase: 3
+    post:
+      summary: Record user-confirmed Kindle receipt
+      tags: [Operations]
+      operationId: confirmOperationReceived
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OperationId"
+        - $ref: "#/components/parameters/CsrfToken"
+      responses:
+        "204": { description: User-attested Kindle receipt recorded. }
+        "409": { $ref: "#/components/responses/OperationNotConfirmable" }
+  /api/v1/me/delivery:
+    x-implementation-phase: 3
+    get:
+      summary: Read masked Kindle delivery settings
+      tags: [Profile]
+      operationId: getDeliverySettings
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Masked destination and sender readiness.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliverySettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: Update the optional Kindle destination
+      tags: [Profile]
+      operationId: updateDeliverySettings
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [kindleAddress]
+              properties:
+                kindleAddress:
+                  type: [string, "null"]
+                  format: email
+                  maxLength: 254
+      responses:
+        "200":
+          description: Destination revision updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeliverySettings" }
+        "401": { $ref: "#/components/responses/RecentAuthenticationRequired" }
+        "422": { $ref: "#/components/responses/ValidationProblem" }
+  /api/v1/me/pin:
+    x-implementation-phase: 2
+    post:
+      summary: Change the current profile's PIN
+      tags: [Profile]
+      operationId: changePin
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [currentPin, newPin]
+              properties:
+                currentPin: { type: string, pattern: "^[0-9]{4}$" }
+                newPin: { type: string, pattern: "^[0-9]{4}$" }
+      responses:
+        "204":
+          description: PIN changed, credential revision incremented, and all profile sessions revoked.
+        "401": { $ref: "#/components/responses/AuthFailed" }
+        "403": { $ref: "#/components/responses/RecentAuthenticationRequired" }
+        "422": { $ref: "#/components/responses/PinNotAllowed" }
+        "429": { $ref: "#/components/responses/AuthThrottled" }
+  /healthz:
+    x-implementation-phase: 2
+    get:
+      summary: Check process liveness
+      operationId: health
+      security: []
+      responses:
+        "200": { description: Process is alive. }
+  /readyz:
+    x-implementation-phase: 2
+    get:
+      summary: Check process readiness
+      operationId: readiness
+      security: []
+      responses:
+        "200": { description: Process can serve its core role. }
+        "503": { description: Required dependency or security configuration is absent. }
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-k.sid
+  parameters:
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: { type: string, minLength: 32, maxLength: 256 }
+    OperationId:
+      name: operationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    ProfileSummary:
+      type: object
+      additionalProperties: false
+      required: [profileId, slug, displayName, credentialState, checkedAt]
+      properties:
+        profileId:
+          type: string
+          format: uuid
+          enum:
+            - 00000000-0000-4000-8000-000000000001
+            - 00000000-0000-4000-8000-000000000002
+            - 00000000-0000-4000-8000-000000000003
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z][a-z0-9-]{0,63}$"
+          description: Deployment-owned alias; operator CLI lookup only.
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Deployment-owned presentation label; never an identity key.
+        credentialState: { type: string, enum: [setup-required, ready, recovery-required] }
+        checkedAt: { type: string, format: date-time }
+    Session:
+      type: object
+      additionalProperties: false
+      required: [profile, csrfToken, createdAt, idleExpiresAt, absoluteExpiresAt, recentAuthenticationAt]
+      properties:
+        profile: { $ref: "#/components/schemas/ProfileSummary" }
+        csrfToken: { type: string }
+        createdAt: { type: string, format: date-time }
+        idleExpiresAt: { type: string, format: date-time }
+        absoluteExpiresAt: { type: string, format: date-time }
+        recentAuthenticationAt: { type: string, format: date-time }
+    PluginId:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9-]{0,63}$"
+    OpaqueId:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    OpaqueCatalogRef:
+      type: string
+      maxLength: 258
+      pattern: "^plugin:[a-z0-9][a-z0-9-]{0,63}:[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    PluginStatus:
+      type: object
+      additionalProperties: false
+      required: [pluginId, displayName, support, checkedAt]
+      properties:
+        pluginId: { $ref: "#/components/schemas/PluginId" }
+        displayName: { type: string }
+        support:
+          type: string
+          enum: [available, blocked, unavailable]
+        checkedAt: { type: string, format: date-time }
+        reason: { type: [string, "null"] }
+    PluginCatalogItem:
+      type: object
+      additionalProperties: false
+      required: [catalogRef, pluginId, itemId, title, authors, capability, capabilityReason, provenance, acquisitionOptions, source, checkedAt]
+      properties:
+        catalogRef: { $ref: "#/components/schemas/OpaqueCatalogRef" }
+        pluginId: { $ref: "#/components/schemas/PluginId" }
+        itemId: { $ref: "#/components/schemas/OpaqueId" }
+        title: { type: string }
+        authors:
+          type: array
+          items: { type: string }
+        publishedYear: { type: [integer, "null"] }
+        language: { type: [string, "null"] }
+        capability:
+          type: string
+          enum: [metadata-only, candidate, deliverable]
+        capabilityReason: { type: string }
+        provenance:
+          type: string
+          enum: [unverified-provenance, verified-public-domain]
+        acquisitionOptions:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            additionalProperties: false
+            required: [optionId, format, rightsBasis]
+            properties:
+              optionId: { $ref: "#/components/schemas/OpaqueId" }
+              format: { const: epub }
+              rightsBasis: { const: public-domain }
+              estimatedBytes: { type: [integer, "null"], minimum: 0, maximum: 26214400 }
+        source: { type: string }
+        checkedAt: { type: string, format: date-time }
+      allOf:
+        - if:
+            properties: { capability: { const: metadata-only } }
+            required: [capability]
+          then:
+            properties:
+              provenance: { const: unverified-provenance }
+              acquisitionOptions: { maxItems: 0 }
+    PluginSearchResponse:
+      type: object
+      additionalProperties: false
+      required: [query, items, partial, plugins, searchedAt]
+      properties:
+        query: { type: string }
+        items:
+          type: array
+          maxItems: 24
+          items: { $ref: "#/components/schemas/PluginCatalogItem" }
+        partial: { type: boolean }
+        plugins:
+          type: array
+          items: { $ref: "#/components/schemas/PluginStatus" }
+        searchedAt: { type: string, format: date-time }
+    DeliveryPreflight:
+      type: object
+      additionalProperties: false
+      required: [preflightId, ready, blockers, warnings, item, selectedOption, outputPlan, destination, sender, limits, recentAuthenticationRequired, plannedStages, previousSubmissions, createdAt, expiresAt]
+      properties:
+        preflightId: { type: string, format: uuid }
+        ready: { type: boolean }
+        blockers:
+          type: array
+          items: { $ref: "#/components/schemas/Issue" }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/Issue" }
+        item: { $ref: "#/components/schemas/PluginCatalogItem" }
+        selectedOption:
+          type: object
+          additionalProperties: false
+          required: [optionId, format, rightsBasis]
+          properties:
+            optionId: { $ref: "#/components/schemas/OpaqueId" }
+            format: { const: epub }
+            rightsBasis: { const: public-domain }
+            estimatedBytes: { type: [integer, "null"], minimum: 0, maximum: 26214400 }
+        outputPlan:
+          type: object
+          additionalProperties: false
+          required: [outputFormat, conversionRequired, metadataSource]
+          properties:
+            outputFormat: { const: epub }
+            conversionRequired: { type: boolean }
+            metadataSource: { type: string }
+        destination:
+          type: object
+          required: [configured, maskedAddress, revision]
+          properties:
+            configured: { type: boolean }
+            maskedAddress: { type: [string, "null"] }
+            revision: { type: integer, minimum: 0 }
+        sender: { $ref: "#/components/schemas/SenderStatus" }
+        limits:
+          type: object
+          additionalProperties: false
+          required: [maximumFileBytes, activeOperations, maximumActiveOperations]
+          properties:
+            maximumFileBytes: { type: integer, minimum: 1 }
+            estimatedFileBytes: { type: [integer, "null"], minimum: 0 }
+            activeOperations: { type: integer, minimum: 0 }
+            maximumActiveOperations: { type: integer, minimum: 1 }
+        recentAuthenticationRequired: { type: boolean }
+        recentAuthenticationExpiresAt: { type: [string, "null"], format: date-time }
+        plannedStages:
+          type: array
+          items: { $ref: "#/components/schemas/OperationStageName" }
+        previousSubmissions: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    Issue:
+      type: object
+      additionalProperties: false
+      required: [code, reason, source, checkedAt]
+      properties:
+        code: { type: string }
+        reason: { type: string }
+        remediation: { type: [string, "null"] }
+        source: { type: string }
+        checkedAt: { type: string, format: date-time }
+    OperationStageName:
+      type: string
+      enum: [preflight, acquire, validate, metadata, convert, validate-output, deliver, cleanup]
+    OperationStage:
+      type: object
+      additionalProperties: false
+      required: [name, status, source, updatedAt]
+      properties:
+        name: { $ref: "#/components/schemas/OperationStageName" }
+        status: { type: string, enum: [not-started, queued, waiting, running, blocked, canceled, succeeded, failed, unknown] }
+        message: { type: [string, "null"] }
+        startedAt: { type: [string, "null"], format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+        source: { type: string }
+        updatedAt: { type: string, format: date-time }
+        error: { anyOf: [{ $ref: "#/components/schemas/OperationError" }, { type: "null" }] }
+    OperationError:
+      type: object
+      additionalProperties: false
+      required: [code, reason, requestId]
+      properties:
+        code: { type: string }
+        reason: { type: string }
+        remediation: { type: [string, "null"] }
+        requestId: { type: string }
+    Operation:
+      type: object
+      additionalProperties: false
+      required: [operationId, type, target, status, stages, attempt, cancelable, createdAt, updatedAt, correlationId, deliveryEvidence]
+      properties:
+        operationId: { type: string, format: uuid }
+        type: { const: acquire-deliver }
+        target:
+          type: object
+          additionalProperties: false
+          required: [title, authors, provider, capability, maskedDestination]
+          properties:
+            title: { type: string }
+            authors:
+              type: array
+              items: { type: string }
+            edition: { type: [string, "null"] }
+            provider: { type: string }
+            capability: { type: string, enum: [candidate, deliverable] }
+            maskedDestination: { type: string }
+        status: { type: string, enum: [queued, waiting, running, blocked, canceling, canceled, succeeded, failed, partial, expired, unknown] }
+        stages:
+          type: array
+          items: { $ref: "#/components/schemas/OperationStage" }
+        attempt: { type: integer, minimum: 1 }
+        cancelable: { type: boolean }
+        retryAfter: { type: [integer, "null"], minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, "null"], format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+        correlationId: { type: string }
+        deliveryEvidence:
+          $ref: "#/components/schemas/DeliveryEvidence"
+        artifact:
+          type: [object, "null"]
+          properties:
+            mediaType: { type: string }
+            sizeBytes: { type: integer, minimum: 0 }
+            sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+    OperationReceipt:
+      type: object
+      additionalProperties: false
+      required: [operationId, status, statusUrl, createdAt]
+      properties:
+        operationId: { type: string, format: uuid }
+        status: { type: string, enum: [queued, canceling] }
+        statusUrl: { type: string }
+        createdAt: { type: string, format: date-time }
+    DeliverySettings:
+      type: object
+      additionalProperties: false
+      required: [destinationStatus, maskedAddress, revision, sender]
+      properties:
+        destinationStatus: { type: string, enum: [not-configured, ready] }
+        maskedAddress: { type: [string, "null"] }
+        revision: { type: integer, minimum: 0 }
+        sender: { $ref: "#/components/schemas/SenderStatus" }
+      description: >-
+        destinationStatus is not-configured exactly when maskedAddress is null;
+        ready requires a non-null maskedAddress. The full address is never returned.
+    SenderStatus:
+      type: object
+      additionalProperties: false
+      required: [status, source, checkedAt]
+      properties:
+        status:
+          type: string
+          enum: [ready, configuration-required, revoked, rejected, unknown]
+        source: { type: string }
+        checkedAt: { type: string, format: date-time }
+        reason: { type: [string, "null"] }
+    DeliveryEvidence:
+      type: object
+      additionalProperties: false
+      required: [state, source, recordedAt]
+      properties:
+        state:
+          type: string
+          enum: [not-submitted, mail-server-accepted, bounced, rejected, unknown, user-confirmed-received]
+        source: { type: string }
+        recordedAt: { type: string, format: date-time }
+        confirmedBy: { type: [string, "null"], maxLength: 120 }
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, code, requestId]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        code: { type: string }
+        requestId: { type: string }
+        retryAt: { type: [string, "null"], format: date-time }
+  responses:
+    Unauthorized:
+      description: Authentication is required.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    AuthFailed:
+      description: Profile or PIN was not accepted; response is intentionally generic.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    AuthThrottled:
+      description: Authentication attempts are delayed or locked.
+      headers:
+        Retry-After: { schema: { type: integer, minimum: 1 } }
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    CredentialCodeFailed:
+      description: Credential redemption failed; profile, code, and state failures are intentionally indistinguishable.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    CredentialStateConflict:
+      description: Credential state changed before this code could be consumed.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    PinNotAllowed:
+      description: PIN is weak, unchanged, or already used by another household profile.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    RecentAuthenticationRequired:
+      description: A fresh PIN check is required for this mutation.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    Forbidden:
+      description: Current profile cannot perform the action.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    NotFound:
+      description: Resource was not found or does not belong to the current profile.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    ValidationProblem:
+      description: Request validation failed.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    ConfigurationRequired:
+      description: Required destination or sender setup is incomplete.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    StalePreflight:
+      description: Preflight expired, was consumed, or no longer matches current revisions.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    OperationNotCancelable:
+      description: The operation passed the last safely cancelable stage.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    OperationNotConfirmable:
+      description: No accepted mail submission is eligible for receipt confirmation.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    AllPluginsFailed:
+      description: No installed source plugin returned a usable response.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    AllProvidersFailed:
+      description: No configured Phase 2 metadata provider returned a usable response.
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }

@@ -1,0 +1,482 @@
+openapi: 3.1.0
+info:
+  title: k Capability Phase 3 HTTP API
+  version: 0.8.0
+  license:
+    name: Apache License 2.0
+    identifier: Apache-2.0
+  description: >-
+    Active Phase 3 contract for installed source plugins, additive Google Books
+    metadata, explicit provider support evidence, and profile-owned Google or Login
+    with Amazon identity connections. The fixed-profile four-digit PIN remains the
+    only k login method. Gmail send, Microsoft/OneDrive, durable account disconnect,
+    generalized destinations, and deployment activation are not part of this contract.
+servers:
+  - url: https://k.example.invalid
+    description: Example private deployment
+x-implementation-phase: capability-phase-3
+x-contract-status: accepted
+x-target-contract: ./http.capabilities.openapi.yaml
+x-plugin-contracts:
+  manifest: ./plugin-manifest.schema.json
+  protocolV2: ./plugin-protocol.v2.schema.json
+tags:
+  - name: Auth
+    description: Fixed household profiles and PIN sessions only.
+  - name: Catalog
+    description: Installed public-domain sources plus additive Google Books evidence.
+  - name: Integrations
+    description: Read-only capability inventory and profile-owned identity connections.
+  - name: Delivery
+    description: Existing Kindle/SMTP delivery behavior.
+  - name: Operations
+    description: Existing durable acquisition and Kindle delivery operations.
+  - name: Profile
+    description: Existing profile-owned settings.
+paths:
+  /api/v1/auth/profiles: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1profiles" }
+  /api/v1/auth/credential: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1credential" }
+  /api/v1/auth/login: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1login" }
+  /api/v1/auth/logout: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1logout" }
+  /api/v1/auth/reauthenticate: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1auth~1reauthenticate" }
+  /api/v1/session: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1session" }
+
+  /api/v1/catalog/search:
+    get:
+      summary: Search installed sources and attach exact Google Books metadata
+      tags: [Catalog]
+      operationId: searchCapabilityPhase3Catalog
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 200 }
+      responses:
+        "200":
+          description: >-
+            Source results with exact-match metadata evidence. Static unsupported
+            integrations do not make the response partial; a configured live Google
+            Books failure does.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogSearchResponse" }
+        "400": { $ref: "./http.openapi.yaml#/components/responses/ValidationProblem" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "503": { $ref: "./http.openapi.yaml#/components/responses/AllPluginsFailed" }
+
+  /api/v1/catalog/items/{catalogRef}:
+    get:
+      summary: Read one source item with exact metadata and support evidence
+      tags: [Catalog]
+      operationId: getCapabilityPhase3CatalogItem
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: catalogRef
+          in: path
+          required: true
+          schema: { $ref: "./http.openapi.yaml#/components/schemas/OpaqueCatalogRef" }
+      responses:
+        "200":
+          description: Current installed-source item and independently sourced evidence.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogItem" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./http.openapi.yaml#/components/responses/NotFound" }
+
+  /api/v1/me/capabilities:
+    get:
+      summary: List Phase 3 installed capabilities and static support records
+      tags: [Integrations]
+      operationId: listPhase3Capabilities
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: >-
+            Deployment-controlled catalog, metadata, and identity capabilities plus
+            explicit Goodreads, Amazon availability, and Kindle Unlimited policy rows.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, checkedAt]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 128
+                    items: { $ref: "#/components/schemas/CapabilityView" }
+                  checkedAt: { type: string, format: date-time }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+
+  /api/v1/me/accounts:
+    get:
+      summary: List the current profile's Google and Amazon identity connections
+      tags: [Integrations]
+      operationId: listPhase3ProviderAccounts
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Masked profile-owned identity connections; tokens and raw subjects are absent.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    minItems: 2
+                    maxItems: 2
+                    items: { $ref: "#/components/schemas/AccountConnectionView" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+
+  /api/v1/me/accounts/{connectorId}/authorizations:
+    post:
+      summary: Start or replace an identity-only provider connection
+      description: >-
+        Requires an existing PIN-authenticated k session and recent PIN. Requested
+        capabilities are fixed to identity-only in Phase 3. This endpoint never logs
+        a profile into k.
+      tags: [Integrations]
+      operationId: startPhase3ProviderAuthorization
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "./http.openapi.yaml#/components/parameters/CsrfToken"
+        - $ref: "#/components/parameters/ConnectorId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [purpose, requestedCapabilities]
+              properties:
+                purpose: { type: string, enum: [connect, reconnect] }
+                requestedCapabilities:
+                  type: array
+                  minItems: 1
+                  maxItems: 1
+                  uniqueItems: true
+                  items: { const: identity-only }
+      responses:
+        "303":
+          description: Continue at the fixed deployment-registered provider authorization endpoint.
+          headers:
+            Location:
+              required: true
+              schema: { type: string, format: uri }
+            Set-Cookie:
+              required: true
+              description: >-
+                __Host-k.oauth browser binding; Path=/; Secure; HttpOnly;
+                SameSite=Lax; Max-Age=600. This value is distinct from OAuth state.
+              schema: { type: string, minLength: 32, maxLength: 1024 }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./http.openapi.yaml#/components/responses/RecentAuthenticationRequired" }
+        "409": { $ref: "./http.capabilities.openapi.yaml#/components/responses/IntegrationNotReady" }
+
+  /oauth/callback/google-gmail:
+    get:
+      summary: Complete a Google identity-only account transaction
+      tags: [Integrations]
+      operationId: completePhase3GoogleAuthorization
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OAuthCode"
+        - $ref: "#/components/parameters/OAuthState"
+        - $ref: "#/components/parameters/OAuthError"
+      responses:
+        "303": { $ref: "./http.capabilities.openapi.yaml#/components/responses/OAuthCompletionRedirect" }
+
+  /oauth/callback/login-with-amazon:
+    get:
+      summary: Complete an identity-only Login with Amazon transaction
+      tags: [Integrations]
+      operationId: completePhase3AmazonAuthorization
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OAuthCode"
+        - $ref: "#/components/parameters/OAuthState"
+        - $ref: "#/components/parameters/OAuthError"
+      responses:
+        "303": { $ref: "./http.capabilities.openapi.yaml#/components/responses/OAuthCompletionRedirect" }
+
+  /profile/integrations/complete:
+    $ref: "./http.capabilities.openapi.yaml#/paths/~1profile~1integrations~1complete"
+
+  /api/v1/me/accounts/{accountId}/disconnect-preflights:
+    post:
+      summary: Preview identity-account disconnect impact without mutation
+      description: >-
+        Phase 3 never queues or executes disconnect. The response is informational;
+        account views keep canDisconnect=false until Phase 4.
+      tags: [Integrations]
+      operationId: previewPhase3AccountDisconnect
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "./http.openapi.yaml#/components/parameters/CsrfToken"
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Non-mutating impact preview with no operation receipt.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountDisconnectPreview" }
+        "401": { $ref: "./http.openapi.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./http.openapi.yaml#/components/responses/RecentAuthenticationRequired" }
+        "404": { $ref: "./http.openapi.yaml#/components/responses/NotFound" }
+
+  /api/v1/preflights/acquire-deliver: { $ref: "./http.phase-3.openapi.yaml#/paths/~1api~1v1~1preflights~1acquire-deliver" }
+  /api/v1/operations: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1operations" }
+  /api/v1/operations/{operationId}: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1operations~1{operationId}" }
+  /api/v1/operations/{operationId}/cancel: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1operations~1{operationId}~1cancel" }
+  /api/v1/operations/{operationId}/confirm-received: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1operations~1{operationId}~1confirm-received" }
+  /api/v1/me/plugins: { $ref: "./http.phase-3.openapi.yaml#/paths/~1api~1v1~1me~1plugins" }
+  /api/v1/me/delivery: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1me~1delivery" }
+  /api/v1/me/pin: { $ref: "./http.openapi.yaml#/paths/~1api~1v1~1me~1pin" }
+  /healthz: { $ref: "./http.openapi.yaml#/paths/~1healthz" }
+  /readyz: { $ref: "./http.openapi.yaml#/paths/~1readyz" }
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-k.sid
+  parameters:
+    ConnectorId:
+      name: connectorId
+      in: path
+      required: true
+      schema: { type: string, enum: [google-gmail, login-with-amazon] }
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OAuthCode:
+      name: code
+      in: query
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 4096 }
+    OAuthState:
+      name: state
+      in: query
+      required: true
+      schema: { type: string, minLength: 32, maxLength: 256 }
+    OAuthError:
+      name: error
+      in: query
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 128 }
+  schemas:
+    CapabilityView:
+      type: object
+      additionalProperties: false
+      required: [capabilityId, pluginId, displayName, family, version, installed, providerAvailability, maturity, mediaKinds, reasonCode, reason, evidence]
+      properties:
+        capabilityId: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,63}$" }
+        pluginId: { type: [string, "null"], pattern: "^[a-z0-9][a-z0-9-]{0,63}$" }
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        family: { type: string, enum: [catalog-source, metadata-enricher, identity-provider, provider-policy] }
+        version: { type: integer, minimum: 1 }
+        installed: { type: boolean }
+        providerAvailability: { $ref: "./http.capabilities.openapi.yaml#/components/schemas/ProviderAvailability" }
+        maturity: { type: string, enum: [stable, policy-only] }
+        mediaKinds:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items: { $ref: "./http.capabilities.openapi.yaml#/components/schemas/MediaKind" }
+        provenance: { type: string, enum: [unverified-provenance, verified-public-domain] }
+        reasonCode: { type: string, pattern: "^[A-Z][A-Z0-9_]{1,63}$" }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+        evidence: { $ref: "./http.capabilities.openapi.yaml#/components/schemas/EvidenceStamp" }
+      allOf:
+        - if:
+            properties: { family: { const: catalog-source } }
+            required: [family]
+          then:
+            required: [provenance]
+            properties:
+              provenance: { type: string, enum: [unverified-provenance, verified-public-domain] }
+
+    AccountConnectionView:
+      type: object
+      additionalProperties: false
+      required: [connectorId, displayName, providerAvailability, state, authorizationPending, maskedAccount, grantedScopes, capabilities, revision, connectedAt, lastValidatedAt, canConnect, canReconnect, canDisconnect, reasonCode, reason, evidence]
+      properties:
+        accountId: { type: [string, "null"], format: uuid }
+        connectorId: { type: string, enum: [google-gmail, login-with-amazon] }
+        displayName: { type: string, maxLength: 120 }
+        providerAvailability: { $ref: "./http.capabilities.openapi.yaml#/components/schemas/ProviderAvailability" }
+        state: { $ref: "./http.capabilities.openapi.yaml#/components/schemas/AccountState" }
+        authorizationPending: { type: boolean }
+        maskedAccount: { type: [string, "null"], maxLength: 254 }
+        grantedScopes:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items: { type: string, maxLength: 200 }
+        capabilities:
+          type: array
+          maxItems: 1
+          uniqueItems: true
+          items: { const: identity-only }
+        revision: { type: integer, minimum: 0 }
+        connectedAt: { type: [string, "null"], format: date-time }
+        lastValidatedAt: { type: [string, "null"], format: date-time }
+        canConnect: { type: boolean }
+        canReconnect: { type: boolean }
+        canDisconnect: { const: false }
+        reasonCode: { type: string, pattern: "^[A-Z][A-Z0-9_]{1,63}$" }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+        evidence: { $ref: "./http.capabilities.openapi.yaml#/components/schemas/EvidenceStamp" }
+      allOf:
+        - if:
+            properties:
+              state: { enum: [connected, expired-or-revoked, error] }
+            required: [state]
+          then:
+            required: [accountId]
+            properties:
+              accountId: { type: string, format: uuid }
+        - if:
+            properties:
+              state: { enum: [not-configured, connecting] }
+            required: [state]
+          then:
+            properties:
+              accountId: { type: "null" }
+
+    AccountDisconnectPreview:
+      type: object
+      additionalProperties: false
+      required: [preflightId, account, affectedDestinations, affectedOperations, canSubmit, reasonCode, reason, createdAt, expiresAt]
+      properties:
+        preflightId: { type: string, format: uuid }
+        account: { $ref: "#/components/schemas/AccountConnectionView" }
+        affectedDestinations:
+          type: array
+          maxItems: 0
+        affectedOperations:
+          type: object
+          additionalProperties: false
+          required: [cancelableQueued, running]
+          properties:
+            cancelableQueued: { const: 0 }
+            running: { const: 0 }
+        canSubmit: { const: false }
+        reasonCode: { const: DISCONNECT_AVAILABLE_IN_PHASE_4 }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+
+    MetadataContribution:
+      type: object
+      additionalProperties: false
+      required: [providerId, providerLabel, recordId, mediaKind, matchedBy, matchQuality, contributedFields, checkedAt, informationLink]
+      properties:
+        providerId: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,63}$" }
+        providerLabel: { type: string, maxLength: 120 }
+        recordId: { $ref: "./http.openapi.yaml#/components/schemas/OpaqueId" }
+        mediaKind: { const: book }
+        matchedBy: { type: string, enum: [isbn-10, isbn-13, oclc, lccn, title-creator] }
+        matchQuality: { type: string, enum: [exact-identifier, exact-title-creator] }
+        contributedFields:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, enum: [title, subtitle, creators, publisher, published-date, description, page-count, categories, average-rating, ratings-count, information-link] }
+        averageRating: { type: [number, "null"], minimum: 1, maximum: 5 }
+        ratingsCount: { type: [integer, "null"], minimum: 0 }
+        checkedAt: { type: string, format: date-time }
+        informationLink: { type: string, format: uri, maxLength: 2048 }
+
+    CapabilityEvidence:
+      type: object
+      additionalProperties: false
+      required: [providerId, capability, state, reasonCode, reason, evidence]
+      properties:
+        providerId: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,63}$" }
+        capability: { type: string, enum: [reviews, product-availability, kindle-unlimited, identity] }
+        state: { $ref: "./http.capabilities.openapi.yaml#/components/schemas/ProviderAvailability" }
+        reasonCode: { type: string, pattern: "^[A-Z][A-Z0-9_]{1,63}$" }
+        reason: { type: string, maxLength: 300 }
+        prerequisite: { type: [string, "null"], maxLength: 300 }
+        evidence: { $ref: "./http.capabilities.openapi.yaml#/components/schemas/EvidenceStamp" }
+
+    CatalogItem:
+      type: object
+      additionalProperties: false
+      required: [catalogRef, pluginId, itemId, mediaKind, title, creators, identifiers, capability, capabilityReason, provenance, acquisitionOptions, source, checkedAt, metadataEvidence, capabilityEvidence]
+      properties:
+        catalogRef: { $ref: "./http.openapi.yaml#/components/schemas/OpaqueCatalogRef" }
+        pluginId: { $ref: "./http.openapi.yaml#/components/schemas/PluginId" }
+        itemId: { $ref: "./http.openapi.yaml#/components/schemas/OpaqueId" }
+        mediaKind: { const: book }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        creators:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 300 }
+        identifiers:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [scheme, value]
+            properties:
+              scheme: { type: string, enum: [isbn-10, isbn-13, oclc, lccn] }
+              value: { type: string, minLength: 1, maxLength: 128 }
+        publishedYear: { type: [integer, "null"], minimum: 1, maximum: 9999 }
+        edition: { type: [string, "null"], maxLength: 300 }
+        language: { type: [string, "null"], maxLength: 80 }
+        capability: { type: string, enum: [metadata-only, candidate, deliverable] }
+        capabilityReason: { type: string, maxLength: 300 }
+        provenance: { type: string, enum: [unverified-provenance, verified-public-domain] }
+        acquisitionOptions:
+          type: array
+          maxItems: 8
+          items: { $ref: "./http.capabilities.openapi.yaml#/components/schemas/AcquisitionOption" }
+        source: { type: string, minLength: 1, maxLength: 120 }
+        checkedAt: { type: string, format: date-time }
+        metadataEvidence:
+          type: array
+          maxItems: 16
+          items: { $ref: "#/components/schemas/MetadataContribution" }
+        capabilityEvidence:
+          type: array
+          maxItems: 16
+          items: { $ref: "#/components/schemas/CapabilityEvidence" }
+      allOf:
+        - if:
+            properties: { capability: { const: metadata-only } }
+            required: [capability]
+          then:
+            properties:
+              provenance: { const: unverified-provenance }
+              acquisitionOptions: { maxItems: 0 }
+
+    CatalogSearchResponse:
+      type: object
+      additionalProperties: false
+      required: [query, mediaKind, items, partial, providers, searchedAt]
+      properties:
+        query: { type: string, minLength: 2, maxLength: 200 }
+        mediaKind: { const: book }
+        items:
+          type: array
+          maxItems: 24
+          items: { $ref: "#/components/schemas/CatalogItem" }
+        partial: { type: boolean }
+        providers:
+          type: array
+          maxItems: 128
+          items: { $ref: "#/components/schemas/CapabilityView" }
+        searchedAt: { type: string, format: date-time }

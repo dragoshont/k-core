@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": 1,
+  "pluginId": "project-gutenberg",
+  "displayName": "Project Gutenberg",
+  "version": "1.0.0",
+  "entrypoint": "index.mjs",
+  "capabilities": ["search", "detail", "acquire"],
+  "allowedHosts": ["www.gutenberg.org"],
+  "rightsBasis": "public-domain",
+  "rightsJurisdiction": "United States",
+  "rightsReviewedAt": "2026-07-18",
+  "formats": ["epub"],
+  "timeoutMs": 20000,
+  "maxResponseBytes": 1048576,
+  "maxArtifactBytes": 26214400
+}
